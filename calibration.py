@@ -17,11 +17,13 @@ from geometry import ScreenConfig
 from paths import data_path
 
 
-CALIB_FORMAT_VERSION = 4  # v4 : features réseau = point d'impact du regard sur l'écran (mm)
+CALIB_FORMAT_VERSION = 5  # v5 : features réseau = point d'impact (mm) + ratios d'iris
+# Régularisation Ridge par mode (validation croisée : 1e-2 le mieux en net, 1e-3 en iris)
+RIDGE_ALPHA = {"net": 1e-2, "iris": 1e-3}
 # Écart-type minimal par feature : une feature qui n'a presque pas varié pendant la
 # calibration (ex. position de la tête) ne doit pas être amplifiée démesurément.
 MIN_FEATURE_STD = {
-    "net": [20.0, 20.0],                                    # mm sur l'écran
+    "net": [20.0, 20.0, 0.005, 0.005],                      # mm sur l'écran, ratios d'iris
     "iris": [0.005, 0.005, 0.005, 0.005, 0.005, 3.0, 3.0],  # ratios..., degrés tête
 }
 # Poids d'un clic souris en recalibration RLS, en « nombre d'échantillons » de calibration
@@ -36,6 +38,8 @@ class AffineGazeModel:
                Le réseau voit déjà la tête tournée et le rayon part de la position réelle de
                l'œil : rotations ET translations de la tête sont gérées par la géométrie. La
                calibration n'est qu'une correction affine (gains, décalages, axe visuel).
+               + ratios d'iris (x, y) : plus précis à l'horizontale que le réseau. Choisi par
+               validation croisée sur une vraie calibration avec lunettes (tools/analyse_calibration.py).
     - 'iris' : features = [rx, ry, rx², rx·ry, ry², yaw tête, pitch tête]. Le ratio d'iris est
                un regard œil-dans-tête : la pose de tête est ici nécessaire.
 
@@ -196,7 +200,7 @@ class CalibrationManager:
         self.screen_config = screen_config
         self.mode = mode
         self.num_points = num_points
-        self.model = AffineGazeModel(mode=mode)
+        self.model = AffineGazeModel(mode=mode, alpha=RIDGE_ALPHA.get(mode, 1e-3))
         self.is_calibrated = False
         self.rls_update_count = 0
 
@@ -243,7 +247,10 @@ class CalibrationManager:
         collected_Y: list[np.ndarray] = []
         # Données brutes enregistrées pour analyse hors ligne (calibration_samples_<mode>.npz)
         from gaze_model import IrisGazeEstimator
+        from filters import BlinkDetector
         iris_probe = IrisGazeEstimator()
+        blink = BlinkDetector()
+        skipped_blinks = 0
         collected_extra: list[np.ndarray] = []
         t_calib_start = time.perf_counter()
 
@@ -320,7 +327,10 @@ class CalibrationManager:
                     print("[calibration] Calibration annulée.")
                     return False
 
-                if face_data.detected and frames_seen > settle_frames:
+                blinking = face_data.detected and blink.update(face_data.eye_openness, time.perf_counter())
+                if blinking and frames_seen > settle_frames:
+                    skipped_blinks += 1
+                if face_data.detected and frames_seen > settle_frames and not blinking:
                     point_G.append(gaze_data.raw_features)
                     point_H.append(np.array([face_data.pose_ypr[0], face_data.pose_ypr[1]]))
                     iris_r = iris_probe.estimate(face_data).iris_ratios
@@ -332,6 +342,7 @@ class CalibrationManager:
                         *origin,
                         gaze_data.pitch_yaw_deg[1], gaze_data.pitch_yaw_deg[0],
                         face_data.iris_diameter_px,
+                        face_data.eye_openness,
                     ], dtype=np.float64))
 
             # Enregistrement des paires collectées pour ce point cible
@@ -354,7 +365,7 @@ class CalibrationManager:
                 G=G_mat, H=H_mat, Y=Y_mat, extra=np.array(collected_extra),
                 extra_cols=np.array(["t", "iris_rx", "iris_ry", "pose_x", "pose_y", "pose_z",
                                      "pose_yaw", "pose_pitch", "pose_roll", "origin_x", "origin_y",
-                                     "origin_z", "net_yaw", "net_pitch", "iris_px"]),
+                                     "origin_z", "net_yaw", "net_pitch", "iris_px", "eye_open"]),
                 screen=np.array([self.screen_config.width_px, self.screen_config.height_px,
                                  self.screen_config.diagonal_inches, self.screen_config.distance_cm]),
             )
@@ -364,7 +375,8 @@ class CalibrationManager:
         rmse_px = self.model.fit(G_mat, H_mat, Y_mat)
         deg_err = rmse_px * self.screen_config.mm_per_px_x / (self.screen_config.distance_cm * 10.0) * (180.0 / math.pi)
 
-        print(f"[calibration] Calibration ({total_points} points) terminée.")
+        print(f"[calibration] Calibration ({total_points} points) terminée "
+              f"({blink.blink_count} clignements ignorés, {skipped_blinks} images écartées).")
         print(f"              -> RMSE résiduel : {rmse_px:.1f} px (~{deg_err:.2f}°)")
         self._print_diagnostic(G_mat, H_mat, Y_mat)
         self.is_calibrated = True
@@ -458,7 +470,7 @@ class CalibrationManager:
         if not os.path.exists(filepath):
             return False
 
-        loaded_model = AffineGazeModel(mode=self.mode)
+        loaded_model = AffineGazeModel(mode=self.mode, alpha=RIDGE_ALPHA.get(self.mode, 1e-3))
         if not loaded_model.load(filepath):
             return False
 

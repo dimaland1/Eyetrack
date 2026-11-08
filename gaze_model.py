@@ -112,6 +112,7 @@ class NetGazeEstimator:
         """
         self.model_path = model_path or _model_path(MODEL_FILE)
         self._ensure_model_exists()
+        self._iris = IrisGazeEstimator()
 
         # Initialisation session ONNX Runtime sur CPU (ultra-rapide avec AVX2)
         opts = ort.SessionOptions()
@@ -207,11 +208,16 @@ class NetGazeEstimator:
         hit_x = float(origin[0] + t * g_cam[0])
         hit_y = float(origin[1] + t * g_cam[1])
 
+        # + ratios d'iris : le réseau donne la direction globale, l'iris affine l'horizontale.
+        # Mesuré sur une vraie calibration (avec lunettes) : 3,7° -> 3,1° dans la zone calibrée.
+        iris_rx, iris_ry = self._iris.estimate(face_data).iris_ratios
+
         return GazeFeatures(
+            iris_ratios=(iris_rx, iris_ry),
             pitch_yaw_deg=(pitch_deg, yaw_deg),
             gaze_vector_cam=g_cam,
             gaze_vector_norm=g_norm,
-            raw_features=np.array([hit_x, hit_y], dtype=np.float64),
+            raw_features=np.array([hit_x, hit_y, iris_rx, iris_ry], dtype=np.float64),
             confidence=1.0,
         )
 

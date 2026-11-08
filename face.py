@@ -64,6 +64,9 @@ class FaceData:
     # Centres des iris en coordonnées pixels (x, y)
     left_iris_px: tuple[float, float] = (0.0, 0.0)
     right_iris_px: tuple[float, float] = (0.0, 0.0)
+    # Ouverture des yeux : distance paupière haute-basse / largeur de l'œil (moyenne des 2 yeux).
+    # ~0,25-0,35 œil ouvert, chute brutale pendant un clignement.
+    eye_openness: float = 0.0
 
 
 class FaceDetector:
@@ -174,6 +177,14 @@ class FaceDetector:
         d2 = float(np.linalg.norm(p_right_1 - p_right_2))
         iris_diam_px = (d1 + d2) / 2.0
 
+        # Ouverture des yeux (détection des clignements)
+        def _openness(eye: dict) -> float:
+            width = float(np.linalg.norm(lm_px[eye["outer"]] - lm_px[eye["inner"]]))
+            height = float(np.linalg.norm(lm_px[eye["top"]] - lm_px[eye["bottom"]]))
+            return height / max(width, 1.0)
+
+        eye_open = 0.5 * (_openness(LEFT_IMAGE_EYE) + _openness(RIGHT_IMAGE_EYE))
+
         return FaceData(
             detected=True,
             landmarks_norm=lm_norm,
@@ -184,4 +195,5 @@ class FaceDetector:
             iris_diameter_px=iris_diam_px,
             left_iris_px=left_iris_center,
             right_iris_px=right_iris_center,
+            eye_openness=eye_open,
         )

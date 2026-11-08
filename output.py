@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import socket
 import struct
 import math
+import time
 import cv2
 import numpy as np
 from geometry import ScreenConfig
@@ -36,6 +37,13 @@ class OutputConfig:
     gaze_deadzone: float = 0.10
     # Exposant de la courbe de réponse (1.0 = linéaire après la zone morte douce)
     gaze_curve_exp: float = 1.20
+    # Gain de rotation de la tête (1.0 = 1:1). Comme les courbes TrackIR/OpenTrack : avec 2,5,
+    # 20° de tête donnent 50° dans le jeu (rétroviseurs d'ETS2 sans quitter l'écran des yeux).
+    head_yaw_gain: float = 1.5
+    head_pitch_gain: float = 1.2
+    # Lissage supplémentaire de la part « regard » de la caméra (constante de temps, s) :
+    # le regard webcam est bruité (~3°) ; sans cela la caméra « danse » quand on fixe un coin.
+    gaze_smoothing_s: float = 0.25
 
 
 def soft_response_curve(val: float, deadzone: float, exp: float) -> float:
@@ -67,6 +75,9 @@ class OpenTrackSender:
         self.ref_pose_ypr = np.array([0.0, 0.0, 0.0], dtype=np.float64)
         self.ref_gaze_norm = np.array([0.5, 0.5], dtype=np.float64)
         self.is_recentered = False
+        # Décalage caméra dû au regard, lissé (yaw, pitch en degrés)
+        self._gaze_offset = np.zeros(2, dtype=np.float64)
+        self._last_send_t: float | None = None
 
     def recenter(
         self,
@@ -107,11 +118,29 @@ class OpenTrackSender:
         y = -rel_xyz[1] if self.config.invert_y else rel_xyz[1]
         z = -rel_xyz[2] if self.config.invert_z else rel_xyz[2]
 
-        yaw = -rel_ypr[0] if self.config.invert_yaw else rel_ypr[0]
-        pitch = -rel_ypr[1] if self.config.invert_pitch else rel_ypr[1]
-        roll = -rel_ypr[2] if self.config.invert_roll else rel_ypr[2]
+        # Convention OpenTrack : pitch positif = tête vers le HAUT. Le pitch issu de MediaPipe
+        # (RQDecomp3x3) est positif quand la tête s'incline vers le BAS : on change son signe.
+        # (Constaté : tête baissée -> caméra qui montait.)
+        yaw = rel_ypr[0]
+        pitch = -rel_ypr[1]
+        roll = rel_ypr[2]
+        if self.config.invert_yaw:
+            yaw = -yaw
+        if self.config.invert_pitch:
+            pitch = -pitch
+        if self.config.invert_roll:
+            roll = -roll
 
-        # Contribution du regard à l'orientation de caméra si activé
+        # Gain de rotation de la tête
+        yaw *= self.config.head_yaw_gain
+        pitch *= self.config.head_pitch_gain
+
+        # Contribution du regard à l'orientation de caméra (cible lissée dans le temps ;
+        # regard coupé = retour en douceur vers 0, sans à-coup)
+        now = time.perf_counter()
+        dt = 0.0 if self._last_send_t is None else min(max(now - self._last_send_t, 0.0), 0.2)
+        self._last_send_t = now
+        target = np.zeros(2, dtype=np.float64)
         if gaze_enabled:
             cur_nx, cur_ny = screen_config.px_to_norm(gaze_px[0], gaze_px[1])
             # Le regard est borné à l'écran : regarder hors écran ne doit pas faire exploser la rotation
@@ -124,12 +153,16 @@ class OpenTrackSender:
             gaze_dx = soft_response_curve(dx, self.config.gaze_deadzone, self.config.gaze_curve_exp)
             gaze_dy = soft_response_curve(dy, self.config.gaze_deadzone, self.config.gaze_curve_exp)
 
-            # Conversion en angle de regard et pondération par gain séparé
-            gaze_yaw_offset = gaze_dx * 35.0 * self.config.gaze_yaw_gain
-            gaze_pitch_offset = gaze_dy * 25.0 * self.config.gaze_pitch_gain
+            # Conversion en angle (yaw : droite = positif ; pitch : regard vers le BAS de
+            # l'écran = dy > 0 = pitch négatif, même convention que la tête)
+            target[0] = gaze_dx * 35.0 * self.config.gaze_yaw_gain
+            target[1] = -gaze_dy * 25.0 * self.config.gaze_pitch_gain
 
-            yaw += gaze_yaw_offset
-            pitch += gaze_pitch_offset
+        tau = max(self.config.gaze_smoothing_s, 1e-3)
+        a = 1.0 - math.exp(-dt / tau) if dt > 0 else 0.0
+        self._gaze_offset += a * (target - self._gaze_offset)
+        yaw += self._gaze_offset[0]
+        pitch += self._gaze_offset[1]
 
         # Encodage binaire OpenTrack UDP : 6 doubles (6 * 8 = 48 octets little-endian)
         payload = struct.pack("<6d", float(x), float(y), float(z), float(yaw), float(pitch), float(roll))

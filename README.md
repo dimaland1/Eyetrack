@@ -39,6 +39,17 @@ mémorisé dans `data/camera_mode.json` (supprimer ce fichier pour relancer la r
 Conseil : régler d'abord la tête seule (`G` pour couper le regard) dans OpenTrack, puis
 ajouter le regard avec un gain modéré.
 
+Réglages principaux d'un profil (`profiles/*.json`) :
+
+| Clé | Effet |
+|---|---|
+| `head_yaw_gain`, `head_pitch_gain` | Amplification de la rotation de la tête (2,5 = 20° de tête -> 50° en jeu) |
+| `gaze_yaw_gain`, `gaze_pitch_gain` | Part du regard dans la rotation de la caméra |
+| `gaze_smoothing_s` | Lissage de la part regard (plus grand = caméra plus calme, plus lente) |
+| `gaze_deadzone` | Zone centrale où le regard n'agit presque pas |
+
+Les clignements sont détectés : le regard est figé pendant un clignement.
+
 ## Structure
 
 ```
@@ -71,6 +82,7 @@ data/               calibrations, cache caméra, sorties de diagnostic (hors git
 | `tools/diag_regard.py` | Le réseau suit-il les yeux ? Amplitude et signal/bruit par résolution |
 | `tools/diag_stabilite.py` | Tremblement brut / filtré de la tête et du regard, framerate, pertes |
 | `tools/validate.py` | Précision du regard calibré sur 9 cibles (export CSV) |
+| `tools/analyse_calibration.py` | Compare plusieurs modèles de calibration sur la dernière calibration enregistrée (validation croisée) |
 
 Chaque calibration enregistre aussi ses données brutes dans
 `data/calibration_samples_<mode>.npz` pour analyse.

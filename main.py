@@ -24,7 +24,7 @@ from normalize import FaceNormalizer
 from gaze_model import create_gaze_estimator
 from geometry import ScreenConfig, get_screen_resolution
 from calibration import CalibrationManager
-from filters import OneEuroFilter, LossBlender
+from filters import OneEuroFilter, LossBlender, BlinkDetector
 from output import OpenTrackSender, Visualizer, OutputConfig
 from overlay import GazeOverlay
 from paths import data_path
@@ -107,6 +107,9 @@ def parse_arguments() -> tuple[argparse.Namespace, Profile]:
     parser.add_argument("--gaze-pitch-gain", type=float, default=active_profile.gaze_pitch_gain, help="Gain regard Pitch caméra")
     parser.add_argument("--gaze-deadzone", type=float, default=active_profile.gaze_deadzone, help="Zone morte centrale du regard")
     parser.add_argument("--gaze-curve-exp", type=float, default=active_profile.gaze_curve_exp, help="Exposant gamma de réponse progressive")
+    parser.add_argument("--gaze-smoothing", type=float, default=active_profile.gaze_smoothing_s, help="Lissage de la part regard de la caméra (s)")
+    parser.add_argument("--head-yaw-gain", type=float, default=active_profile.head_yaw_gain, help="Gain de rotation tête Yaw (1 = 1:1)")
+    parser.add_argument("--head-pitch-gain", type=float, default=active_profile.head_pitch_gain, help="Gain de rotation tête Pitch (1 = 1:1)")
 
     # Fonctionnalités avancées (Étapes 5 & 6)
     parser.add_argument("--overlay", action="store_true", default=active_profile.overlay_enabled, help="Active l'overlay transparent")
@@ -203,6 +206,8 @@ def main() -> None:
     gaze_filter = OneEuroFilter(dim=2, min_cutoff=args.gaze_min_cutoff, beta=args.gaze_beta, median_window=args.gaze_median)
     # Maintien pendant les pertes de visage puis retour en douceur à la réacquisition
     pose_blender = LossBlender(dim=6, blend_time=0.35, min_loss=0.1)
+    # Clignements : le regard est figé pendant le clignement (sinon il saute)
+    blink_detector = BlinkDetector()
     gaze_blender = LossBlender(dim=2, blend_time=0.35, min_loss=0.1)
 
     # Bornes du point de regard (petite marge hors écran pour l'overlay)
@@ -233,6 +238,9 @@ def main() -> None:
         gaze_pitch_gain=args.gaze_pitch_gain,
         gaze_deadzone=args.gaze_deadzone,
         gaze_curve_exp=args.gaze_curve_exp,
+        gaze_smoothing_s=args.gaze_smoothing,
+        head_yaw_gain=args.head_yaw_gain,
+        head_pitch_gain=args.head_pitch_gain,
     )
     sender = OpenTrackSender(config=out_cfg)
     visualizer = Visualizer()
@@ -309,7 +317,9 @@ def main() -> None:
 
             # 5. Étape Calibration & Filtrage
             t0 = time.perf_counter()
+            blinking = False
             if face_data.detected:
+                blinking = blink_detector.update(face_data.eye_openness, timestamp)
                 # Après une vraie perte de suivi, on repart d'un filtre neuf : sinon le grand dt
                 # et la dérivée gonflée laissent passer un saut puis du bruit pendant ~1 s.
                 if pose_blender.lost_duration(timestamp) >= pose_blender.min_loss:
@@ -350,8 +360,9 @@ def main() -> None:
 
                 # Bornage avant filtrage : une prédiction aberrante (regard hors écran,
                 # extrapolation de la calibration) ne doit pas entraîner le filtre ni la caméra.
+                # Pendant un clignement, le point de regard reste figé (filtre non alimenté).
                 clamped_gaze = clamp_gaze(raw_gaze_px)
-                if clamped_gaze is not None:
+                if clamped_gaze is not None and not blinking:
                     filtered_gaze = gaze_filter.filter([clamped_gaze[0], clamped_gaze[1]], timestamp)
                     filtered_gaze = gaze_blender.update(filtered_gaze, timestamp)
                     current_gaze_px = (float(filtered_gaze[0]), float(filtered_gaze[1]))
@@ -396,7 +407,7 @@ def main() -> None:
                 }
 
             # Recalibration implicite RLS sur les clics de souris (Étape 5)
-            if enable_recalib and ctypes and face_data.detected and calibration_mgr.is_calibrated:
+            if enable_recalib and ctypes and face_data.detected and calibration_mgr.is_calibrated and not blinking:
                 try:
                     is_mouse_down = (ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000) != 0
                     if is_mouse_down and not prev_mouse_down:
@@ -476,6 +487,9 @@ def main() -> None:
                     sender.config.gaze_pitch_gain = current_profile.gaze_pitch_gain
                     sender.config.gaze_deadzone = current_profile.gaze_deadzone
                     sender.config.gaze_curve_exp = current_profile.gaze_curve_exp
+                    sender.config.gaze_smoothing_s = current_profile.gaze_smoothing_s
+                    sender.config.head_yaw_gain = current_profile.head_yaw_gain
+                    sender.config.head_pitch_gain = current_profile.head_pitch_gain
                     pose_filter.set_params(min_cutoff=current_profile.pose_min_cutoff, beta=current_profile.pose_beta)
                     gaze_filter.set_params(min_cutoff=current_profile.gaze_min_cutoff, beta=current_profile.gaze_beta,
                                            median_window=current_profile.gaze_median)

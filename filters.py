@@ -191,3 +191,51 @@ class LossBlender:
 
         self.held = out.copy()
         return out
+
+
+class BlinkDetector:
+    """Détecte les clignements à partir de l'ouverture des yeux (FaceData.eye_openness).
+
+    Pendant un clignement, les points des paupières et de l'iris s'écrasent : le regard
+    estimé saute (constaté : ~6 % des échantillons d'une calibration, par salves de ~0,3 s).
+    On compare l'ouverture à une référence « œil ouvert » qui s'adapte lentement (lunettes,
+    distance, fatigue) ; sous ``close_ratio`` × référence, le regard est déclaré non fiable,
+    ainsi que pendant ``hold_after_s`` après la réouverture (le temps que l'œil se stabilise).
+    Le seuil reste bas (0,55) : regarder le bas de l'écran ferme un peu les paupières sans
+    être un clignement.
+    """
+
+    def __init__(self, close_ratio: float = 0.55, hold_after_s: float = 0.15, adapt: float = 0.02) -> None:
+        self.close_ratio = float(close_ratio)
+        self.hold_after_s = float(hold_after_s)
+        self.adapt = float(adapt)
+        self.baseline: float | None = None
+        self._closed = False
+        self._reopen_t: float | None = None
+        self.blink_count = 0
+
+    def update(self, openness: float, timestamp: float) -> bool:
+        """Renvoie True si le regard n'est pas fiable sur cette image (clignement en cours)."""
+        if openness <= 0.0:
+            return True
+        if self.baseline is None:
+            self.baseline = openness
+            return False
+        # Référence « œil ouvert » : monte vite, descend lentement, ignore les yeux mi-clos
+        if openness > self.baseline:
+            self.baseline += 0.1 * (openness - self.baseline)
+        elif openness > 0.8 * self.baseline:
+            self.baseline += self.adapt * (openness - self.baseline)
+
+        if openness < self.close_ratio * self.baseline:
+            if not self._closed:
+                self.blink_count += 1
+            self._closed = True
+            self._reopen_t = None
+            return True
+        if self._closed:
+            self._closed = False
+            self._reopen_t = timestamp
+        if self._reopen_t is not None and timestamp - self._reopen_t < self.hold_after_s:
+            return True
+        return False

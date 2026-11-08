@@ -36,6 +36,11 @@ class Profile:
     gaze_pitch_gain: float = 0.65   # Multiplicateur vertical
     gaze_deadzone: float = 0.10     # Zone morte douce [0..1] (atténue sans couper)
     gaze_curve_exp: float = 1.20    # Exposant de réponse (1.0 = linéaire)
+    gaze_smoothing_s: float = 0.25  # Lissage de la part regard de la caméra (s)
+
+    # Rotation de la tête (1.0 = 1:1 ; >1 amplifie, comme les courbes TrackIR/OpenTrack)
+    head_yaw_gain: float = 1.5
+    head_pitch_gain: float = 1.2
 
     # Lissage One Euro : réglages séparés car les unités diffèrent
     # Pose tête (degrés et cm)
@@ -149,10 +154,13 @@ def create_builtin_profile(name: str) -> Profile:
             name="ets2",
             description="Euro Truck Simulator 2 / ATS : grand angle pour rétroviseurs, pitch stable",
             gaze_mode="net",
-            gaze_yaw_gain=0.65,
-            gaze_pitch_gain=0.40,
+            gaze_yaw_gain=0.5,
+            gaze_pitch_gain=0.3,
             gaze_deadzone=0.1,
             gaze_curve_exp=1.25,
+            gaze_smoothing_s=0.3,
+            head_yaw_gain=2.5,
+            head_pitch_gain=1.5,
             pose_min_cutoff=1.0,
             pose_beta=0.15,
             gaze_min_cutoff=0.4,
@@ -167,6 +175,9 @@ def create_builtin_profile(name: str) -> Profile:
             gaze_pitch_gain=0.55,
             gaze_deadzone=0.07,
             gaze_curve_exp=1.1,
+            gaze_smoothing_s=0.25,
+            head_yaw_gain=3.0,
+            head_pitch_gain=2.0,
             pose_min_cutoff=0.8,
             pose_beta=0.12,
             gaze_min_cutoff=0.45,
@@ -181,6 +192,9 @@ def create_builtin_profile(name: str) -> Profile:
             gaze_pitch_gain=0.25,
             gaze_deadzone=0.12,
             gaze_curve_exp=1.3,
+            gaze_smoothing_s=0.25,
+            head_yaw_gain=2.0,
+            head_pitch_gain=1.2,
             pose_min_cutoff=1.2,
             pose_beta=0.18,
             gaze_min_cutoff=0.4,
@@ -195,6 +209,9 @@ def create_builtin_profile(name: str) -> Profile:
             gaze_pitch_gain=0.65,
             gaze_deadzone=0.1,
             gaze_curve_exp=1.2,
+            gaze_smoothing_s=0.25,
+            head_yaw_gain=1.5,
+            head_pitch_gain=1.2,
             pose_min_cutoff=1.0,
             pose_beta=0.15,
             gaze_min_cutoff=0.4,

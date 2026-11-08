@@ -113,14 +113,24 @@ class OpenTrackSender:
         rel_xyz = raw_xyz - self.ref_pose_xyz
         rel_ypr = raw_ypr - self.ref_pose_ypr
 
-        # Inversion éventuelle des axes
-        x = -rel_xyz[0] if self.config.invert_x else rel_xyz[0]
-        y = -rel_xyz[1] if self.config.invert_y else rel_xyz[1]
-        z = -rel_xyz[2] if self.config.invert_z else rel_xyz[2]
+        # Conversion des conventions MediaPipe -> OpenTrack, constatées en jeu (BeamNG, ETS2) :
+        # - X : se pencher à droite faisait glisser la caméra à gauche -> signe inversé.
+        # - Z : MediaPipe augmente quand on s'approche de l'écran, OpenTrack l'interprète comme
+        #   un recul (avancer le visage faisait reculer la caméra) -> signe inversé.
+        x = -rel_xyz[0]
+        y = rel_xyz[1]
+        z = -rel_xyz[2]
+        if self.config.invert_x:
+            x = -x
+        if self.config.invert_y:
+            y = -y
+        if self.config.invert_z:
+            z = -z
 
-        # Convention OpenTrack : pitch positif = tête vers le HAUT. Le pitch issu de MediaPipe
-        # (RQDecomp3x3) est positif quand la tête s'incline vers le BAS : on change son signe.
-        # (Constaté : tête baissée -> caméra qui montait.)
+        # - Pitch : positif quand la tête s'incline vers le BAS chez MediaPipe, vers le HAUT chez
+        #   OpenTrack (tête baissée -> caméra qui montait) -> signe inversé.
+        # - Roll : même signe chez MediaPipe et OpenTrack (vérifié en jeu une fois l'ordre des
+        #   angles corrigé dans face.py ; le problème venait du mélange des axes, pas du signe).
         yaw = rel_ypr[0]
         pitch = -rel_ypr[1]
         roll = rel_ypr[2]

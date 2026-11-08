@@ -153,14 +153,17 @@ class FaceDetector:
             tz = float(mat[2, 3])
             pose_xyz = (tx, ty, tz)
 
-            # Rotation d'Euler depuis la sous-matrice 3x3
-            # RQDecomp3x3 renvoie les angles de rotation autour des axes X, Y, Z
-            R = mat[:3, :3]
-            angles, _, _, _, _, _ = cv2.RQDecomp3x3(R)
-            # angles[0] = Pitch (X), angles[1] = Yaw (Y), angles[2] = Roll (Z)
-            pitch = float(angles[0])
-            yaw = float(angles[1])
-            roll = float(angles[2])
+            # Angles d'Euler dans l'ordre d'OpenTrack : yaw (autour de Y), puis pitch (autour de
+            # l'axe X de la tête), puis roll (autour de l'axe avant de la tête), soit
+            # R = Ry(yaw) · Rx(pitch) · Rz(roll) dans le repère MediaPipe (x droite, y haut).
+            # L'ancien RQDecomp3x3 (ordre X-Y-Z) mélangeait les axes dès que la tête était
+            # tournée : tête tournée de 40° puis penchée de 15° donnait un faux pitch de 12°.
+            # On ramène d'abord la matrice à une rotation pure (au cas où elle contient une échelle).
+            U, _, Vt = np.linalg.svd(mat[:3, :3])
+            R = U @ Vt
+            yaw = float(np.degrees(np.arctan2(R[0, 2], R[2, 2])))
+            pitch = float(np.degrees(np.arcsin(np.clip(-R[1, 2], -1.0, 1.0))))
+            roll = float(np.degrees(np.arctan2(R[1, 0], R[1, 1])))
             pose_ypr = (yaw, pitch, roll)
 
         # Extraction des iris et calcul du diamètre métrique

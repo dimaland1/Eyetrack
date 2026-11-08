@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+
+# Modèles : téléchargés automatiquement au premier lancement (et licences non commerciales)
+models/
+*.onnx
+*.task
+
+# Données personnelles et générées : calibrations, cache caméra, sorties de diagnostic
+# (diag_patches.png contient une photo du visage)
+data/
+*.npz
+camera_mode.json
+diag_patches.png
+diag_stabilite.csv
+validation_*.csv

@@ -1,0 +1,184 @@
+"""Module de détection faciale et d'estimation de pose 6DoF via MediaPipe Tasks.
+
+Utilise le modèle FaceLandmarker (478 points, incluant les iris) et la matrice
+de transformation faciale 4x4 pour extraire la pose de tête métrique (cm)
+et les rotations d'Euler (degrés).
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass
+import os
+import time
+import urllib.request
+import cv2
+import numpy as np
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
+# Indices canoniques MediaPipe 478 points
+# Œil droit du sujet (côté gauche de l'image caméra standard)
+LEFT_IMAGE_EYE = {
+    "outer": 33,
+    "inner": 133,
+    "top": 159,
+    "bottom": 145,
+    "iris_center": 468,
+    "iris_rim": (469, 470, 471, 472),
+}
+
+# Œil gauche du sujet (côté droit de l'image caméra standard)
+RIGHT_IMAGE_EYE = {
+    "inner": 362,
+    "outer": 263,
+    "top": 386,
+    "bottom": 374,
+    "iris_center": 473,
+    "iris_rim": (474, 475, 476, 477),
+}
+
+MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+)
+
+
+@dataclass
+class FaceData:
+    """Structure contenant toutes les données extraites du visage par frame."""
+
+    detected: bool
+    # Landmarks normalisés [0..1] de dimension (478, 3)
+    landmarks_norm: np.ndarray | None = None
+    # Landmarks en pixels de l'image courante (478, 2)
+    landmarks_px: np.ndarray | None = None
+    # Matrice de transformation 4x4 brute issue de MediaPipe
+    transform_matrix: np.ndarray | None = None
+    # Pose 6DoF : translation (x, y, z en cm) et rotation (yaw, pitch, roll en degrés)
+    pose_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    pose_ypr: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    # Diamètre estimé de l'iris en pixels
+    iris_diameter_px: float = 0.0
+    # Centres des iris en coordonnées pixels (x, y)
+    left_iris_px: tuple[float, float] = (0.0, 0.0)
+    right_iris_px: tuple[float, float] = (0.0, 0.0)
+
+
+class FaceDetector:
+    """Détecteur de visage et de pose basé sur MediaPipe FaceLandmarker."""
+
+    def __init__(self, model_path: str = "face_landmarker.task") -> None:
+        """Initialise le modèle FaceLandmarker.
+
+        Args:
+            model_path: Chemin vers le fichier modèle .task. Téléchargé automatiquement si absent.
+        """
+        self.model_path = model_path
+        self._ensure_model_exists()
+
+        base_options = python.BaseOptions(model_asset_path=self.model_path)
+        # Mode VIDEO : MediaPipe suit le visage d'une frame à l'autre au lieu de le
+        # redétecter à chaque image -> landmarks plus stables, moins de pertes, plus rapide.
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.VIDEO,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=True,
+            num_faces=1,
+        )
+        self.detector = vision.FaceLandmarker.create_from_options(options)
+        # Le mode VIDEO exige des timestamps (ms) strictement croissants
+        self._last_ts_ms: int = -1
+
+    def _ensure_model_exists(self) -> None:
+        """Vérifie la présence du modèle et le télécharge si nécessaire."""
+        if not os.path.exists(self.model_path):
+            print(f"[face] Téléchargement du modèle FaceLandmarker depuis {MODEL_URL}...")
+            urllib.request.urlretrieve(MODEL_URL, self.model_path)
+            print("[face] Modèle téléchargé avec succès.")
+
+    def process(self, frame_bgr: np.ndarray, timestamp_s: float | None = None) -> FaceData:
+        """Traite une image BGR et extrait les landmarks et la pose 6DoF.
+
+        Args:
+            frame_bgr: Image BGR OpenCV (H, W, 3).
+            timestamp_s: Horodatage de la frame en secondes (time.perf_counter()).
+                Si omis, l'heure courante est utilisée.
+
+        Returns:
+            FaceData contenant les informations faciales ou detected=False.
+        """
+        h, w = frame_bgr.shape[:2]
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+
+        if timestamp_s is None:
+            timestamp_s = time.perf_counter()
+        ts_ms = max(int(timestamp_s * 1000.0), self._last_ts_ms + 1)
+        self._last_ts_ms = ts_ms
+
+        result = self.detector.detect_for_video(mp_image, ts_ms)
+
+        if not result.face_landmarks or len(result.face_landmarks) == 0:
+            return FaceData(detected=False)
+
+        raw_landmarks = result.face_landmarks[0]
+        # Conversion en tableau numpy normalisé (478, 3)
+        lm_norm = np.array(
+            [[lm.x, lm.y, lm.z] for lm in raw_landmarks], dtype=np.float32
+        )
+        # Coordonnées en pixels
+        lm_px = np.zeros((len(raw_landmarks), 2), dtype=np.float32)
+        lm_px[:, 0] = lm_norm[:, 0] * w
+        lm_px[:, 1] = lm_norm[:, 1] * h
+
+        # Pose 6DoF depuis la matrice 4x4 MediaPipe
+        pose_xyz = (0.0, 0.0, -60.0)
+        pose_ypr = (0.0, 0.0, 0.0)
+        transform_mat = None
+
+        if result.facial_transformation_matrixes and len(result.facial_transformation_matrixes) > 0:
+            mat = np.array(result.facial_transformation_matrixes[0], dtype=np.float64)
+            transform_mat = mat
+
+            # Translation en cm (colonne 3)
+            tx = float(mat[0, 3])
+            ty = float(mat[1, 3])
+            tz = float(mat[2, 3])
+            pose_xyz = (tx, ty, tz)
+
+            # Rotation d'Euler depuis la sous-matrice 3x3
+            # RQDecomp3x3 renvoie les angles de rotation autour des axes X, Y, Z
+            R = mat[:3, :3]
+            angles, _, _, _, _, _ = cv2.RQDecomp3x3(R)
+            # angles[0] = Pitch (X), angles[1] = Yaw (Y), angles[2] = Roll (Z)
+            pitch = float(angles[0])
+            yaw = float(angles[1])
+            roll = float(angles[2])
+            pose_ypr = (yaw, pitch, roll)
+
+        # Extraction des iris et calcul du diamètre métrique
+        left_iris_center = (float(lm_px[LEFT_IMAGE_EYE["iris_center"], 0]), float(lm_px[LEFT_IMAGE_EYE["iris_center"], 1]))
+        right_iris_center = (float(lm_px[RIGHT_IMAGE_EYE["iris_center"], 0]), float(lm_px[RIGHT_IMAGE_EYE["iris_center"], 1]))
+
+        # Calcul du diamètre de l'iris en pixels (distance entre les points du contour)
+        p_left_1 = lm_px[LEFT_IMAGE_EYE["iris_rim"][0]]
+        p_left_2 = lm_px[LEFT_IMAGE_EYE["iris_rim"][2]]
+        d1 = float(np.linalg.norm(p_left_1 - p_left_2))
+
+        p_right_1 = lm_px[RIGHT_IMAGE_EYE["iris_rim"][0]]
+        p_right_2 = lm_px[RIGHT_IMAGE_EYE["iris_rim"][2]]
+        d2 = float(np.linalg.norm(p_right_1 - p_right_2))
+        iris_diam_px = (d1 + d2) / 2.0
+
+        return FaceData(
+            detected=True,
+            landmarks_norm=lm_norm,
+            landmarks_px=lm_px,
+            transform_matrix=transform_mat,
+            pose_xyz=pose_xyz,
+            pose_ypr=pose_ypr,
+            iris_diameter_px=iris_diam_px,
+            left_iris_px=left_iris_center,
+            right_iris_px=right_iris_center,
+        )

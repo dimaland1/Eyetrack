@@ -7,11 +7,17 @@ et mesure, pour la tête et pour le regard :
 - la dérive lente (écart-type total) ;
 - le framerate réel et les pertes de visage.
 
-Les mesures image par image sont enregistrées dans diag_stabilite.csv.
-Usage : python diag_stabilite.py [--profile default] [--gaze-mode net] [--camera 0]
+Les mesures image par image sont enregistrées dans data/diag_stabilite.csv.
+Usage : python tools/diag_stabilite.py [--profile default] [--gaze-mode net] [--camera 0]
 """
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Les outils vivent dans tools/ : on rend importables les modules du tracker (dossier parent)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import argparse
 import csv
 import os
@@ -26,6 +32,7 @@ from geometry import ScreenConfig, get_screen_resolution
 from calibration import CalibrationManager
 from filters import OneEuroFilter
 from profile import load_profile
+from paths import data_path
 
 DURATION_S = 10.0
 SETTLE_S = 1.5
@@ -57,7 +64,7 @@ def main() -> None:
     normalizer = FaceNormalizer(target_size=448 if mode == "net" else 224, virtual_focal=prof.patch_focal)
     estimator = create_gaze_estimator(mode=mode)
     calib = CalibrationManager(screen_config=sc, mode=mode)
-    calibrated = calib.load(f"calibration_{mode}.npz")
+    calibrated = calib.load(data_path(f"calibration_{mode}.npz"))
     pose_f = OneEuroFilter(6, prof.pose_min_cutoff, prof.pose_beta)
     gaze_f = OneEuroFilter(2, prof.gaze_min_cutoff, prof.gaze_beta, median_window=prof.gaze_median)
 
@@ -125,7 +132,8 @@ def main() -> None:
     fps = (len(t) - 1) / (t[-1] - t[0])
     dts = np.diff(t)
 
-    with open("diag_stabilite.csv", "w", newline="", encoding="utf-8") as f:
+    csv_path = data_path("diag_stabilite.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(["t", *[f"brut_{n}" for n in POSE_NAMES], *[f"filtre_{n}" for n in POSE_NAMES],
                     "regard_brut_x", "regard_brut_y", "regard_filtre_x", "regard_filtre_y", "feat0", "feat1"])
@@ -151,7 +159,7 @@ def main() -> None:
               f"  — centre de l'écran : ({sw // 2}, {sh // 2})")
     else:
         print("\n(Regard non mesuré : pas de calibration pour ce mode.)")
-    print(f"\nDétail image par image : {os.path.abspath('diag_stabilite.csv')}")
+    print(f"\nDétail image par image : {csv_path}")
 
 
 if __name__ == "__main__":

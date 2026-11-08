@@ -12,8 +12,10 @@ import time
 import cv2
 import numpy as np
 
+from paths import data_path
+
 # Mémorise le mode de capture qui fonctionne (évite ~10-25 s de recherche à chaque lancement)
-CAMERA_CACHE_FILE = "camera_mode.json"
+CAMERA_CACHE_FILE = data_path("camera_mode.json")
 _BACKENDS = {"dshow": cv2.CAP_DSHOW, "any": cv2.CAP_ANY}
 
 

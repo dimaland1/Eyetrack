@@ -9,12 +9,18 @@ Implémente deux approches interchangeables :
 from __future__ import annotations
 from dataclasses import dataclass, field
 import os
+import urllib.request
 import cv2
 import numpy as np
 import onnxruntime as ort
 
 from face import FaceData, LEFT_IMAGE_EYE, RIGHT_IMAGE_EYE
 from normalize import NormalizationData
+from paths import model_path as _model_path
+
+# Poids pré-entraînés (yakhyo/gaze-estimation, entraînés sur Gaze360 : usage non commercial)
+MODEL_FILE = "mobileone_s0_gaze.onnx"
+MODEL_URL = "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx"
 
 
 @dataclass
@@ -97,13 +103,14 @@ class IrisGazeEstimator:
 class NetGazeEstimator:
     """Estimateur basé sur réseau d'apparence ONNX (MobileOne-S0 / ResNet-18)."""
 
-    def __init__(self, model_path: str = "mobileone_s0_gaze.onnx") -> None:
+    def __init__(self, model_path: str | None = None) -> None:
         """Initialise la session ONNX Runtime.
 
         Args:
-            model_path: Chemin du fichier ONNX (téléchargé si absent).
+            model_path: Chemin du fichier ONNX (défaut : models/mobileone_s0_gaze.onnx,
+                téléchargé si absent).
         """
-        self.model_path = model_path
+        self.model_path = model_path or _model_path(MODEL_FILE)
         self._ensure_model_exists()
 
         # Initialisation session ONNX Runtime sur CPU (ultra-rapide avec AVX2)
@@ -130,9 +137,9 @@ class NetGazeEstimator:
     def _ensure_model_exists(self) -> None:
         """Vérifie la présence du modèle ONNX et le télécharge si nécessaire."""
         if not os.path.exists(self.model_path):
-            print(f"[gaze_model] Fichier modèle '{self.model_path}' absent. Téléchargement automatique...")
-            from download_weights import download_model
-            download_model("mobileone_s0")
+            print(f"[gaze_model] Modèle absent, téléchargement depuis {MODEL_URL} ...")
+            urllib.request.urlretrieve(MODEL_URL, self.model_path)
+            print("[gaze_model] Modèle téléchargé.")
 
     def _softmax(self, x: np.ndarray) -> np.ndarray:
         """Calcule le softmax numériquement stable sur l'axe 1."""
@@ -209,7 +216,7 @@ class NetGazeEstimator:
         )
 
 
-def create_gaze_estimator(mode: str = "iris", model_path: str = "mobileone_s0_gaze.onnx") -> IrisGazeEstimator | NetGazeEstimator:
+def create_gaze_estimator(mode: str = "iris", model_path: str | None = None) -> IrisGazeEstimator | NetGazeEstimator:
     """Factory pour créer l'estimateur de regard selon le mode demandé."""
     if mode == "iris":
         return IrisGazeEstimator()

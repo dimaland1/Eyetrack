@@ -27,6 +27,7 @@ from calibration import CalibrationManager
 from filters import OneEuroFilter, LossBlender
 from output import OpenTrackSender, Visualizer, OutputConfig
 from overlay import GazeOverlay
+from paths import data_path
 from profile import (
     Profile,
     load_profile,
@@ -185,7 +186,7 @@ def main() -> None:
     gaze_estimator = create_gaze_estimator(mode=args.gaze_mode)
 
     # 5. Gestionnaire de calibration affine
-    calib_file = f"calibration_{args.gaze_mode}.npz"
+    calib_file = data_path(f"calibration_{args.gaze_mode}.npz")
     calibration_mgr = CalibrationManager(
         screen_config=screen_config,
         mode=args.gaze_mode,
@@ -195,9 +196,6 @@ def main() -> None:
     if os.path.exists(calib_file):
         if calibration_mgr.load(calib_file):
             print(f"[main] Calibration existante chargée depuis {calib_file}.")
-    elif os.path.exists("calibration.npz"):
-        if calibration_mgr.load("calibration.npz"):
-            print("[main] Calibration existante chargée depuis calibration.npz (fallback).")
 
     # 6. Filtres One Euro (6D pour la pose tête, 2D pour le point de regard écran)
     # Réglages séparés : les unités (degrés/cm vs pixels) et le niveau de bruit diffèrent.

@@ -13,6 +13,8 @@ import urllib.request
 import cv2
 import numpy as np
 import mediapipe as mp
+
+from paths import model_path
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
@@ -67,13 +69,14 @@ class FaceData:
 class FaceDetector:
     """Détecteur de visage et de pose basé sur MediaPipe FaceLandmarker."""
 
-    def __init__(self, model_path: str = "face_landmarker.task") -> None:
+    def __init__(self, model_file: str | None = None) -> None:
         """Initialise le modèle FaceLandmarker.
 
         Args:
-            model_path: Chemin vers le fichier modèle .task. Téléchargé automatiquement si absent.
+            model_file: Chemin vers le fichier modèle .task (défaut : models/face_landmarker.task).
+                Téléchargé automatiquement si absent.
         """
-        self.model_path = model_path
+        self.model_path = model_file or model_path("face_landmarker.task")
         self._ensure_model_exists()
 
         base_options = python.BaseOptions(model_asset_path=self.model_path)

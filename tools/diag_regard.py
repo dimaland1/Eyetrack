@@ -12,11 +12,17 @@ Configurations comparées :
 - crop_serre  : simple recadrage carré serré autour du visage (sans normalisation) ;
 - iris        : ratios d'iris (mode MVP), pour comparaison.
 
-Les patchs vus par le réseau sont enregistrés dans diag_patches.png.
-Usage : python diag_regard.py [--resolutions 640x480,800x600,1280x720] [--camera 0]
+Les patchs vus par le réseau sont enregistrés dans data/diag_patches.png.
+Usage : python tools/diag_regard.py [--resolutions 640x480,800x600,1280x720] [--camera 0]
 """
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Les outils vivent dans tools/ : on rend importables les modules du tracker (dossier parent)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import argparse
 import math
 import cv2
@@ -27,6 +33,7 @@ from face import FaceDetector, FaceData
 from normalize import FaceNormalizer, NormalizationData
 from gaze_model import NetGazeEstimator, IrisGazeEstimator
 from geometry import ScreenConfig, get_screen_resolution
+from paths import data_path
 
 TARGETS = [("centre", 0.5, 0.5), ("gauche", 0.08, 0.5), ("droite", 0.92, 0.5),
            ("haut", 0.5, 0.08), ("bas", 0.5, 0.92)]
@@ -186,8 +193,9 @@ def main() -> None:
         row = [cv2.resize(p, (240, 240)) for p in patches.values()]
         for img, lab in zip(row, patches.keys()):
             cv2.putText(img, lab, (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-        cv2.imwrite("diag_patches.png", np.hstack(row))
-        print("Patchs vus par le réseau enregistrés dans diag_patches.png")
+        out = data_path("diag_patches.png")
+        cv2.imwrite(out, np.hstack(row))
+        print(f"Patchs vus par le réseau enregistrés dans {out}")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,8 @@ import json
 import os
 from dataclasses import dataclass, asdict, field
 
+import paths
+
 
 @dataclass
 class Profile:
@@ -74,7 +76,7 @@ class Profile:
         return cls(**filtered)
 
 
-PROFILES_DIR = "profiles"
+PROFILES_DIR = str(paths.PROFILES_DIR)
 
 
 def ensure_profiles_dir() -> str:
@@ -95,7 +97,9 @@ def list_profiles() -> list[str]:
 
 def get_profile_path(name_or_path: str) -> str:
     """Résout le chemin d'un profil par son nom ou chemin absolu/relatif."""
-    if os.path.isabs(name_or_path) or name_or_path.startswith(PROFILES_DIR + os.sep) or name_or_path.startswith(PROFILES_DIR + "/"):
+    # Un chemin explicite (absolu ou avec un séparateur) est utilisé tel quel ; un nom simple
+    # (ex. "ets2") désigne un profil du dossier profiles/.
+    if os.path.isabs(name_or_path) or "/" in name_or_path or "\\" in name_or_path:
         if not name_or_path.endswith(".json"):
             name_or_path = f"{name_or_path}.json"
         return name_or_path

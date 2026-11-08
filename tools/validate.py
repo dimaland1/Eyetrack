@@ -15,8 +15,12 @@ import math
 import os
 import sys
 import time
+from pathlib import Path
 import cv2
 import numpy as np
+
+# Les outils vivent dans tools/ : on rend importables les modules du tracker (dossier parent)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from capture import WebcamCapture
 from face import FaceDetector
@@ -25,6 +29,7 @@ from gaze_model import create_gaze_estimator
 from geometry import ScreenConfig, get_screen_resolution
 from calibration import CalibrationManager
 from filters import OneEuroFilter
+from paths import data_path
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -102,7 +107,7 @@ def run_validation() -> None:
     )
 
     is_compare = args.compare
-    out_csv = args.output or ("validation_comparison.csv" if is_compare else f"validation_{args.gaze_mode}.csv")
+    out_csv = args.output or data_path("validation_comparison.csv" if is_compare else f"validation_{args.gaze_mode}.csv")
 
     print("=" * 70)
     print(" Eyetrack - Banc de Validation de Précision")
@@ -130,15 +135,10 @@ def run_validation() -> None:
         calib_net = CalibrationManager(screen_config=screen_config, mode="net")
 
         # Chargement des fichiers de calibration respectifs
-        for path in ["calibration_iris.npz", "calibration.npz"]:
-            if os.path.exists(path) and calib_iris.load(path):
-                print(f"[validate] Calibration Iris chargée depuis {path}")
-                break
-
-        for path in ["calibration_net.npz", "calibration.npz"]:
-            if os.path.exists(path) and calib_net.load(path):
-                print(f"[validate] Calibration Net chargée depuis {path}")
-                break
+        for mgr, name in ((calib_iris, "iris"), (calib_net, "net")):
+            path = data_path(f"calibration_{name}.npz")
+            if os.path.exists(path) and mgr.load(path):
+                print(f"[validate] Calibration {name} chargée depuis {path}")
 
         filter_iris = OneEuroFilter(dim=2, min_cutoff=0.4, beta=0.0005, median_window=5)
         filter_net = OneEuroFilter(dim=2, min_cutoff=0.4, beta=0.0005, median_window=5)
@@ -149,9 +149,7 @@ def run_validation() -> None:
         gaze_filter = OneEuroFilter(dim=2, min_cutoff=0.4, beta=0.0005, median_window=5)
 
         # Fichier de calibration cible
-        calib_path = args.calib_file or f"calibration_{args.gaze_mode}.npz"
-        if not os.path.exists(calib_path) and os.path.exists("calibration.npz"):
-            calib_path = "calibration.npz"
+        calib_path = args.calib_file or data_path(f"calibration_{args.gaze_mode}.npz")
 
         has_calib = False
         if os.path.exists(calib_path):
@@ -188,14 +186,21 @@ def run_validation() -> None:
                     return
                 elif k == ord("c"):
                     cv2.destroyWindow(intro_win)
+                    def read_mirrored():
+                        # Même effet miroir que la boucle de mesure (sinon l'axe X est inversé)
+                        ok_c, fr_c, ts_c = capture.read()
+                        if ok_c and fr_c is not None and not args.no_flip:
+                            fr_c = cv2.flip(fr_c, 1)
+                        return ok_c, fr_c, ts_c
+
                     success = calib_mgr.run_interactive_calibration(
-                        capture_fn=capture.read,
+                        capture_fn=read_mirrored,
                         face_detector=face_detector,
                         gaze_estimator=gaze_estimator,
                         normalizer=normalizer,
                     )
                     if success:
-                        calib_mgr.save(f"calibration_{args.gaze_mode}.npz")
+                        calib_mgr.save(data_path(f"calibration_{args.gaze_mode}.npz"))
                     break
                 elif k == ord(" ") or k == 13:
                     cv2.destroyWindow(intro_win)

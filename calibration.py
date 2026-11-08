@@ -14,6 +14,7 @@ import time
 import cv2
 import numpy as np
 from geometry import ScreenConfig
+from paths import data_path
 
 
 CALIB_FORMAT_VERSION = 4  # v4 : features réseau = point d'impact du regard sur l'écran (mm)
@@ -349,7 +350,7 @@ class CalibrationManager:
 
         try:
             np.savez(
-                f"calibration_samples_{self.mode}.npz",
+                data_path(f"calibration_samples_{self.mode}.npz"),
                 G=G_mat, H=H_mat, Y=Y_mat, extra=np.array(collected_extra),
                 extra_cols=np.array(["t", "iris_rx", "iris_ry", "pose_x", "pose_y", "pose_z",
                                      "pose_yaw", "pose_pitch", "pose_roll", "origin_x", "origin_y",

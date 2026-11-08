@@ -28,8 +28,29 @@ from normalize import FaceNormalizer
 from gaze_model import create_gaze_estimator
 from geometry import ScreenConfig, get_screen_resolution
 from calibration import CalibrationManager
-from filters import OneEuroFilter
+from filters import OneEuroFilter, BlinkDetector
 from paths import data_path
+from profile import load_profile
+
+
+def eye_position_cm(pose_xyz: tuple[float, float, float], screen_config: ScreenConfig) -> tuple[float, float, float]:
+    """Position de l'œil dans le repère de l'écran (cm, origine au centre, x droite, y bas).
+
+    MediaPipe donne la tête dans le repère caméra (y vers le HAUT, origine à la webcam). La
+    webcam est supposée au centre du bord supérieur de l'écran, d'où le décalage d'une
+    demi-hauteur d'écran.
+    """
+    x, y, z = pose_xyz
+    return (float(x), float(-y - screen_config.height_mm / 20.0), float(z))
+
+
+def clamp_to_screen(px: tuple[float, float], screen_config: ScreenConfig) -> tuple[float, float] | None:
+    """Même bornage que le tracker (écran ± 5 %) ; None si la valeur est invalide."""
+    x, y = float(px[0]), float(px[1])
+    if not (np.isfinite(x) and np.isfinite(y)):
+        return None
+    w, h = screen_config.width_px, screen_config.height_px
+    return float(np.clip(x, -0.05 * w, 1.05 * w)), float(np.clip(y, -0.05 * h, 1.05 * h))
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -73,6 +94,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--samples-per-point", type=int, default=35, help="Échantillons par cible (défaut: 35)")
     parser.add_argument("--settle-frames", type=int, default=15, help="Frames ignorées par cible pour la saccade (défaut: 15)")
     parser.add_argument("--skip-calibration", action="store_true", help="Mesure directement sans proposer de calibration")
+    parser.add_argument("--profile", type=str, default="default", help="Profil dont on reprend les réglages de filtre (défaut: default)")
 
     return parser.parse_args()
 
@@ -124,7 +146,17 @@ def run_validation() -> None:
         target_fps=args.fps,
     )
     face_detector = FaceDetector()
-    normalizer = FaceNormalizer(target_size=448)
+    prof = load_profile(args.profile)
+    normalizer = FaceNormalizer(target_size=448, virtual_focal=prof.patch_focal)
+
+    def make_gaze_filter() -> OneEuroFilter:
+        # Mêmes réglages que le tracker (profil), pour mesurer ce que l'on obtient vraiment en jeu
+        return OneEuroFilter(dim=2, min_cutoff=prof.gaze_min_cutoff, beta=prof.gaze_beta,
+                             median_window=prof.gaze_median)
+
+    # Clignements : images écartées de la mesure (le tracker fige le regard pendant ce temps)
+    blink_detector = BlinkDetector()
+    skipped_blinks = 0
 
     # Estimateurs et calibrations
     if is_compare:
@@ -140,13 +172,13 @@ def run_validation() -> None:
             if os.path.exists(path) and mgr.load(path):
                 print(f"[validate] Calibration {name} chargée depuis {path}")
 
-        filter_iris = OneEuroFilter(dim=2, min_cutoff=0.4, beta=0.0005, median_window=5)
-        filter_net = OneEuroFilter(dim=2, min_cutoff=0.4, beta=0.0005, median_window=5)
+        filter_iris = make_gaze_filter()
+        filter_net = make_gaze_filter()
 
     else:
         gaze_estimator = create_gaze_estimator(mode=args.gaze_mode)
         calib_mgr = CalibrationManager(screen_config=screen_config, mode=args.gaze_mode)
-        gaze_filter = OneEuroFilter(dim=2, min_cutoff=0.4, beta=0.0005, median_window=5)
+        gaze_filter = make_gaze_filter()
 
         # Fichier de calibration cible
         calib_path = args.calib_file or data_path(f"calibration_{args.gaze_mode}.npz")
@@ -235,7 +267,7 @@ def run_validation() -> None:
             if mirror_mode:
                 frame = cv2.flip(frame, 1)
 
-            face_data = face_detector.process(frame)
+            face_data = face_detector.process(frame, timestamp)
             norm_data = normalizer.process(frame, face_data)
 
             # Écran de validation
@@ -269,8 +301,13 @@ def run_validation() -> None:
 
             if not face_data.detected:
                 continue
+            if blink_detector.update(face_data.eye_openness, timestamp):
+                if frames_seen > args.settle_frames:
+                    skipped_blinks += 1
+                continue
 
             head_ypr = (float(face_data.pose_ypr[0]), float(face_data.pose_ypr[1]))
+            eye_cm = eye_position_cm(face_data.pose_xyz, screen_config)
 
             # Calcul des prédictions
             if is_compare:
@@ -281,7 +318,7 @@ def run_validation() -> None:
                 else:
                     rx, ry = feat_iris.iris_ratios
                     px_raw_iris = (screen_w * (0.5 + (rx - 0.5) * 2.5), screen_h * (0.5 + (ry - 0.5) * 2.5))
-                pt_iris = filter_iris.filter([px_raw_iris[0], px_raw_iris[1]], timestamp)
+                px_raw_iris = clamp_to_screen(px_raw_iris, screen_config)
 
                 # 2. Mode Net
                 feat_net = est_net.estimate(face_data, norm_data=norm_data)
@@ -289,13 +326,17 @@ def run_validation() -> None:
                     px_raw_net = calib_net.predict(feat_net.raw_features, head_pose=head_ypr)
                 else:
                     px_raw_net = screen_config.ray_screen_intersection(norm_data.origin_3d_mm, feat_net.gaze_vector_cam)
+                px_raw_net = clamp_to_screen(px_raw_net, screen_config)
+                if px_raw_iris is None or px_raw_net is None:
+                    continue
+                pt_iris = filter_iris.filter([px_raw_iris[0], px_raw_iris[1]], timestamp)
                 pt_net = filter_net.filter([px_raw_net[0], px_raw_net[1]], timestamp)
 
                 if frames_seen > args.settle_frames:
                     collected_count += 1
-                    err_deg_iris = screen_config.visual_angle_deg((tx, ty), (pt_iris[0], pt_iris[1]), face_data.pose_xyz)
+                    err_deg_iris = screen_config.visual_angle_deg((tx, ty), (pt_iris[0], pt_iris[1]), eye_cm)
                     err_cm_iris = screen_config.distance_cm_between_px((tx, ty), (pt_iris[0], pt_iris[1]))
-                    err_deg_net = screen_config.visual_angle_deg((tx, ty), (pt_net[0], pt_net[1]), face_data.pose_xyz)
+                    err_deg_net = screen_config.visual_angle_deg((tx, ty), (pt_net[0], pt_net[1]), eye_cm)
                     err_cm_net = screen_config.distance_cm_between_px((tx, ty), (pt_net[0], pt_net[1]))
 
                     detailed_records.append({
@@ -324,11 +365,14 @@ def run_validation() -> None:
                         rx, ry = feat.iris_ratios
                         px_raw = (screen_w * (0.5 + (rx - 0.5) * 2.5), screen_h * (0.5 + (ry - 0.5) * 2.5))
 
+                px_raw = clamp_to_screen(px_raw, screen_config)
+                if px_raw is None:
+                    continue
                 pt = gaze_filter.filter([px_raw[0], px_raw[1]], timestamp)
 
                 if frames_seen > args.settle_frames:
                     collected_count += 1
-                    err_deg = screen_config.visual_angle_deg((tx, ty), (pt[0], pt[1]), face_data.pose_xyz)
+                    err_deg = screen_config.visual_angle_deg((tx, ty), (pt[0], pt[1]), eye_cm)
                     err_cm = screen_config.distance_cm_between_px((tx, ty), (pt[0], pt[1]))
 
                     detailed_records.append({
@@ -348,6 +392,9 @@ def run_validation() -> None:
 
     cv2.destroyAllWindows()
     capture.release()
+
+    print(f"\n[validate] {blink_detector.blink_count} clignements détectés, "
+          f"{skipped_blinks} images écartées de la mesure.")
 
     if not detailed_records:
         print("\n[validate] Aucun échantillon exploitable collecté.")

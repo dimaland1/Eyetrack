@@ -87,6 +87,36 @@ data/               calibrations, cache caméra, sorties de diagnostic (hors git
 Chaque calibration enregistre aussi ses données brutes dans
 `data/calibration_samples_<mode>.npz` pour analyse.
 
+## Améliorations pour la prochaine fois
+
+Reste de la phase 1 (solidifier), par ordre de priorité :
+
+1. **Raccourcis globaux** (recentrer, regard on/off, pause) actifs même dans le jeu.
+   Aujourd'hui, les touches ne marchent que si la fenêtre du tracker a le focus : en jeu,
+   `R` part au jeu. En attendant, utiliser le raccourci « Center » d'OpenTrack
+   (Options → Shortcuts), qui fonctionne en plein jeu.
+2. **Envoi à OpenTrack à 60–120 Hz avec prédiction** entre deux images de la webcam
+   (30 fps). Supprimerait les saccades à la source ; aujourd'hui elles sont lissées par le
+   filtre Accela d'OpenTrack, qui doit donc rester activé.
+3. **Désactiver la recalibration au clic en jeu** (ou par profil). En jeu, la souris est
+   souvent bloquée au centre de l'écran : chaque clic apprend une fausse cible et dégrade la
+   calibration sans prévenir. En attendant : `--no-recalib`.
+4. **Tests automatiques sur le sens des axes** (yaw, pitch, roll, X, Y, Z) envoyés à
+   OpenTrack, pour que les inversions corrigées à la main ne reviennent pas.
+
+Plus tard :
+
+- **Phase 2 — confort** : panneau de contrôle (profil, curseurs de gains et de lissage en
+  direct, calibrer / recentrer, état fps / visage / clignement), icône dans la barre des
+  tâches ; calibration guidée (note de qualité, refaire un point raté, cibles plus près des
+  bords, alerte reflets sur les lunettes).
+- **Phase 3 — paquet cadeau** : `.exe` installable (PyInstaller + installateur), assistant
+  de premier lancement (caméra, écran, distance, calibration), profil OpenTrack fourni
+  (entrée UDP, Accela, axes réglés). Rappel : le modèle de regard est non commercial.
+- **Phase 4 — bonus** : changement de profil automatique selon le jeu lancé, courbes de
+  réponse de la tête (douces au centre, fortes sur les côtés), presets par jeu liant profil
+  tracker et profil OpenTrack.
+
 ## Licences
 
 Le modèle de regard (`mobileone_s0_gaze.onnx`, projet yakhyo/gaze-estimation) est entraîné

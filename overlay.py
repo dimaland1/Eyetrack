@@ -34,6 +34,10 @@ class GazeOverlay:
 
         self._current_x = width // 2
         self._current_y = height // 2
+        # Tkinter n'est pas thread-safe : les demandes d'affichage/masquage venant du thread
+        # principal sont mémorisées ici et appliquées par le thread Tk (poll_position).
+        self._visibility_dirty = False
+        self.hwnd: int = 0  # handle Win32 de la fenêtre, connu une fois le thread Tk démarré
 
     def start(self, visible: bool = False) -> None:
         """Démarre le thread d'affichage de l'overlay."""
@@ -56,6 +60,7 @@ class GazeOverlay:
             hwnd = user32.GetParent(root.winfo_id())
             if hwnd == 0:
                 hwnd = root.winfo_id()
+            self.hwnd = hwnd  # handle Win32 de la fenêtre (diagnostic / tests)
 
             GWL_EXSTYLE = -20
             WS_EX_TRANSPARENT = 0x00000020
@@ -117,6 +122,16 @@ class GazeOverlay:
                     self._root.destroy()
                     return
 
+                # Affichage / masquage demandé par toggle() (appliqué dans le thread Tk)
+                if self._visibility_dirty:
+                    self._visibility_dirty = False
+                    if self.is_visible:
+                        self._root.deiconify()
+                        self._root.attributes("-topmost", True)
+                        self._apply_click_through(self._root)
+                    else:
+                        self._root.withdraw()
+
                 # Dépilement des dernières coordonnées
                 updated = False
                 while not self._queue.empty():
@@ -126,7 +141,7 @@ class GazeOverlay:
                     except queue.Empty:
                         break
 
-                if updated and self.is_visible and self._canvas is not None:
+                if updated and self.is_visible and self._canvas is not None and self._reticle_outer is not None:
                     cx, cy = self._current_x, self._current_y
                     r_o = 15
                     r_i = 3
@@ -140,6 +155,16 @@ class GazeOverlay:
 
         except Exception as e:
             print(f"[overlay] Erreur thread overlay : {e}")
+        finally:
+            # Les objets Tk doivent être libérés par CE thread : sinon Python les détruit depuis
+            # le thread principal à la fermeture -> « Tcl_AsyncDelete: async handler deleted by
+            # the wrong thread » et code de sortie 3.
+            self._canvas = None
+            self._reticle_outer = None
+            self._reticle_inner = None
+            self._root = None
+            import gc
+            gc.collect()
 
     def update_gaze(self, x_px: float, y_px: float) -> None:
         """Met à jour les coordonnées du point de regard (thread-safe)."""
@@ -156,16 +181,17 @@ class GazeOverlay:
             pass
 
     def toggle(self) -> bool:
-        """Active ou désactive l'affichage de l'overlay."""
+        """Active ou désactive l'affichage de l'overlay.
+
+        Appelé depuis le thread principal : on ne touche pas à Tkinter ici (non thread-safe,
+        risque de blocage), le thread Tk applique le changement à son prochain rafraîchissement.
+        """
         self.is_visible = not self.is_visible
-        if self._root is not None:
-            if self.is_visible:
-                self._root.deiconify()
-                self._apply_click_through(self._root)
-            else:
-                self._root.withdraw()
+        self._visibility_dirty = True
         return self.is_visible
 
     def stop(self) -> None:
-        """Arrête l'overlay et libère les ressources."""
+        """Arrête l'overlay et attend que son thread ait libéré Tkinter."""
         self.is_running = False
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=1.0)

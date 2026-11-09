@@ -28,7 +28,7 @@ from filters import OneEuroFilter, LossBlender, BlinkDetector
 from output import OpenTrackSender, Visualizer, OutputConfig
 from overlay import GazeOverlay
 from hotkeys import GlobalHotkeys, format_hotkey
-from panel import ControlPanel, PANEL_FIELDS
+from panel import ControlPanel, PANEL_FIELDS, make_preview
 from paths import data_path
 from profile import (
     Profile,
@@ -122,6 +122,7 @@ def parse_arguments() -> tuple[argparse.Namespace, Profile]:
     parser.add_argument("--overlay", action="store_true", default=active_profile.overlay_enabled, help="Active l'overlay transparent")
     parser.add_argument("--no-recalib", action="store_true", default=not active_profile.recalib_on_click, help="Désactive recalibration RLS")
     parser.add_argument("--no-panel", action="store_true", help="Sans panneau de contrôle (fenêtre Moniteur seule)")
+    parser.add_argument("--moniteur", action="store_true", help="Ouvre aussi la fenêtre Moniteur (vidéo + HUD de diagnostic)")
 
     # Paramètres de lissage One Euro (séparés : pose en degrés/cm, regard en pixels)
     parser.add_argument("--pose-min-cutoff", type=float, default=active_profile.pose_min_cutoff, help="Fréquence min One Euro de la pose tête (Hz)")
@@ -255,7 +256,9 @@ def main() -> None:
     )
     sender = OpenTrackSender(config=out_cfg)
     sender.start()
-    visualizer = Visualizer()
+    # Fenêtre Moniteur (vidéo + HUD) : seulement sur demande (--moniteur) ou sans panneau ;
+    # l'aperçu caméra du panneau la remplace au quotidien.
+    visualizer = Visualizer() if (args.moniteur or args.no_panel) else None
 
     # Raccourcis globaux (actifs même quand le jeu a le focus)
     hotkey_labels = {"recenter": "Recentrer", "gaze": "Regard on/off", "pause": "Pause (caméra au centre)"}
@@ -284,6 +287,7 @@ def main() -> None:
     filtered_ypr = (0.0, 0.0, 0.0)
     prev_mouse_down = False
     blinking = False
+    frame_count = 0
 
     # Le profil actif reflète ce qui tourne réellement (options de la ligne de commande comprises) :
     # le panneau l'affiche et « Sauvegarder » l'écrit tel quel.
@@ -365,15 +369,17 @@ def main() -> None:
             return False
         return bool(info.flags & 0x1) and bool(info.hCursor)  # CURSOR_SHOWING
 
-    print("\n[INFO] Tracker démarré. Raccourcis clavier (fenêtre Moniteur) :")
-    print("  [C] : Lancer la calibration affine (5 ou 9 points)")
-    print("  [G] : Activer / Désactiver la contribution du regard à la caméra")
-    print("  [O] : Activer / Désactiver l'overlay transparent in-game")
-    print("  [P] : Basculer vers le profil suivant (default, ets2, flight_sim, racing)")
-    print("  [S] : Sauvegarder la configuration dans le profil JSON actif")
-    print("  [R] : Recentrer la pose et le regard (zéro)")
-    print("  [Espace] : Pause (la caméra revient au centre et y reste)")
-    print("  [Q] ou ESC : Quitter")
+    print("\n[INFO] Tracker démarré.")
+    if visualizer is not None:
+        print("Raccourcis clavier (fenêtre Moniteur) :")
+        print("  [C] : Lancer la calibration affine (5 ou 9 points)")
+        print("  [G] : Activer / Désactiver la contribution du regard à la caméra")
+        print("  [O] : Activer / Désactiver l'overlay transparent in-game")
+        print("  [P] : Basculer vers le profil suivant (default, ets2, flight_sim, racing)")
+        print("  [S] : Sauvegarder la configuration dans le profil JSON actif")
+        print("  [R] : Recentrer la pose et le regard (zéro)")
+        print("  [Espace] : Pause (la caméra revient au centre et y reste)")
+        print("  [Q] ou ESC : Quitter")
     print("Raccourcis globaux (marchent aussi en jeu) :")
     for action, combo in hotkey_bindings.items():
         if not combo:
@@ -541,8 +547,14 @@ def main() -> None:
             # Mise à jour de l'overlay transparent in-game (Étape 6)
             overlay.update_gaze(current_gaze_px[0], current_gaze_px[1])
 
-            # 7. Étape Rendu visuel & gestion des touches
-            key = visualizer.render(
+            # Aperçu caméra du panneau (~10 images/s, seulement s'il est affiché)
+            frame_count += 1
+            if panel is not None and panel.preview_enabled and frame_count % 3 == 0:
+                panel.publish_preview(make_preview(
+                    frame, face_data.detected, [face_data.left_iris_px, face_data.right_iris_px], blinking))
+
+            # 7. Étape Rendu visuel & gestion des touches (fenêtre Moniteur, si ouverte)
+            key = 255 if visualizer is None else visualizer.render(
                 frame=frame,
                 face_detected=face_data.detected,
                 left_iris=face_data.left_iris_px,
@@ -568,6 +580,14 @@ def main() -> None:
             )
 
             # État pour le panneau de contrôle
+            # Temps de calcul seul (sans l'attente de l'image suivante de la caméra)
+            t_face_ms, t_gaze_ms = step_latencies.get("face", 0.0), step_latencies.get("gaze", 0.0)
+            t_calc_ms = t_face_ms + t_gaze_ms + step_latencies.get("filter", 0.0)
+            diag_text = f"Calcul : {t_calc_ms:.0f} ms par image (visage {t_face_ms:.0f}, regard {t_gaze_ms:.0f})"
+            if jitter:
+                diag_text += (f"\nAgitation (1 s, si immobile) : tête {jitter['head_deg']:.2f}°, "
+                              f"regard {jitter['gaze_px']:.0f} px")
+
             def panel_status(calibrating: bool = False) -> dict:
                 return {
                     "face": face_data.detected, "blinking": blinking, "fps": capture.measured_fps,
@@ -577,6 +597,7 @@ def main() -> None:
                     "profile_name": current_profile.name, "profiles": available_profiles,
                     "profile_version": profile_version, "profile_values": dict(profile_values),
                     "hotkey_hint": hotkey_hint, "calibrating": calibrating,
+                    "diag": diag_text,
                 }
 
             if panel is not None:
@@ -661,7 +682,8 @@ def main() -> None:
         overlay.stop()
         capture.release()
         sender.close()
-        visualizer.close()
+        if visualizer is not None:
+            visualizer.close()
         print("[main] Terminé avec succès.")
 
 

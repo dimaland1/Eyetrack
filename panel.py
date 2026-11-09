@@ -4,7 +4,10 @@ Le panneau tourne dans son propre thread (comme l'overlay) : Tkinter n'est pas t
 donc il n'échange avec la boucle principale que par deux canaux simples :
 - `publish(status)` : la boucle principale dépose l'état courant (dict) à chaque image ;
 - `poll()` : la boucle principale récupère les commandes de l'utilisateur, sous la forme
-  ("action", nom), ("profile", nom) ou ("set", champ_du_profil, valeur).
+  ("action", nom), ("profile", nom) ou ("set", champ_du_profil, valeur) ;
+- aperçu caméra : quand `preview_enabled` est vrai (bouton « Voir la caméra »), la boucle
+  principale dépose une vignette avec `publish_preview()` (~10 images/s). Éteint par défaut :
+  en jeu, l'image ne sert à rien et ne coûte alors rien.
 
 Les réglages modifient le profil actif en direct ; « Sauvegarder » les écrit dans son JSON.
 Fermer le panneau arrête le tracker.
@@ -15,6 +18,9 @@ import queue
 import threading
 import tkinter as tk
 from tkinter import ttk
+
+import cv2
+import numpy as np
 
 # Curseurs : (champ du profil, libellé, min, max, pas)
 HEAD_SLIDERS = [
@@ -34,6 +40,29 @@ CHECKS = [
 PANEL_FIELDS = [f for f, *_ in HEAD_SLIDERS + GAZE_SLIDERS] + [f for f, _ in CHECKS]
 
 GREEN, RED, ORANGE, GREY = "#1a7f37", "#c62828", "#e65100", "#666666"
+
+PREVIEW_WIDTH = 320  # largeur de la vignette caméra (px)
+
+
+def make_preview(frame_bgr: np.ndarray, face_detected: bool, iris_px: list[tuple[float, float]],
+                 blinking: bool = False, width: int = PREVIEW_WIDTH) -> np.ndarray:
+    """Vignette RGB de l'image caméra pour le panneau.
+
+    Points jaunes sur les iris détectés (ils doivent tomber au centre des pupilles, sans être
+    happés par un reflet des lunettes) ; cadre vert = visage suivi, orange = clignement,
+    rouge = visage perdu.
+    """
+    h, w = frame_bgr.shape[:2]
+    scale = width / float(w)
+    small = cv2.resize(frame_bgr, (width, max(1, int(round(h * scale)))), interpolation=cv2.INTER_AREA)
+    if face_detected:
+        for x, y in iris_px:
+            cv2.circle(small, (int(round(x * scale)), int(round(y * scale))), 3, (0, 255, 255), -1)
+        color = (0, 140, 255) if blinking else (40, 180, 40)
+    else:
+        color = (40, 40, 220)
+    cv2.rectangle(small, (0, 0), (small.shape[1] - 1, small.shape[0] - 1), color, 4)
+    return cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
 
 
 class ControlPanel:
@@ -57,6 +86,16 @@ class ControlPanel:
         self._shown_version = -1
         self._shown_profiles: tuple = ()
         self._updating = False  # vrai pendant une mise à jour des widgets par le programme
+        # Aperçu caméra : demandé par le bouton (lu par la boucle principale), vignette déposée
+        # par la boucle principale (largeur, hauteur, octets RGB, numéro)
+        self.preview_enabled = False
+        self._preview: tuple[int, int, bytes, int] | None = None
+        self._preview_seq = 0
+        self._preview_shown_seq = -1
+        self._preview_box: ttk.LabelFrame | None = None
+        self._preview_label: tk.Label | None = None
+        self._preview_photo: tk.PhotoImage | None = None
+        self._diag: tk.Label | None = None
 
     # ------------------------------------------------------------------ interface (thread principal)
     def start(self) -> None:
@@ -70,6 +109,12 @@ class ControlPanel:
     def publish(self, status: dict) -> None:
         """Dépose l'état courant du tracker (remplacement atomique du dict)."""
         self._status = status
+
+    def publish_preview(self, rgb: np.ndarray) -> None:
+        """Dépose une vignette RGB (uint8, h x w x 3) pour l'aperçu caméra."""
+        h, w = rgb.shape[:2]
+        self._preview_seq += 1
+        self._preview = (w, h, np.ascontiguousarray(rgb, dtype=np.uint8).tobytes(), self._preview_seq)
 
     def poll(self) -> list[tuple]:
         """Commandes envoyées par l'utilisateur depuis le dernier appel."""
@@ -106,6 +151,10 @@ class ControlPanel:
             self._buttons.clear()
             self._profile_box = None
             self._hint = None
+            self._preview_box = None
+            self._preview_label = None
+            self._preview_photo = None
+            self._diag = None
             self._root = None
             import gc
             gc.collect()
@@ -134,12 +183,33 @@ class ControlPanel:
         cmd.grid(row=1, column=0, sticky="ew", **pad)
         buttons = [
             ("recenter", "Recentrer"), ("pause", "Pause"), ("gaze", "Couper le regard"),
-            ("calibrate", "Calibrer le regard"), ("overlay", "Afficher l'overlay"), ("quit", "Quitter"),
+            ("calibrate", "Calibrer le regard"), ("overlay", "Afficher l'overlay"), ("preview", "Voir la caméra"),
         ]
         for i, (action, text) in enumerate(buttons):
-            b = ttk.Button(cmd, text=text, width=19, command=lambda a=action: self._send("action", a))
+            if action == "preview":
+                command = self._toggle_preview  # géré par le panneau lui-même
+            else:
+                command = lambda a=action: self._send("action", a)  # noqa: E731
+            b = ttk.Button(cmd, text=text, width=19, command=command)
             b.grid(row=i // 3, column=i % 3, padx=4, pady=3)
             self._buttons[action] = b
+        self._buttons["quit"] = ttk.Button(cmd, text="Quitter", width=19, command=lambda: self._send("action", "quit"))
+        self._buttons["quit"].grid(row=2, column=2, padx=4, pady=3)
+
+        # --- Aperçu caméra (colonne de droite, masquée par défaut)
+        pv = ttk.LabelFrame(root, text="Caméra")
+        pv.grid(row=0, column=1, rowspan=6, sticky="n", **pad)
+        self._preview_label = tk.Label(pv, text="En attente de l'image…", width=PREVIEW_WIDTH // 8, height=12,
+                                       bg="#202020", fg="#bbbbbb")
+        self._preview_label.grid(row=0, column=0, padx=6, pady=6)
+        self._diag = tk.Label(pv, text="", fg=GREY, justify="left", anchor="w")
+        self._diag.grid(row=1, column=0, sticky="w", padx=6)
+        tk.Label(pv, justify="left", anchor="w", fg=GREY, wraplength=PREVIEW_WIDTH,
+                 text="Points jaunes : iris détectés. Ils doivent rester au centre des pupilles, "
+                      "sans sauter sur un reflet des lunettes.\nCadre vert : visage suivi ; "
+                      "orange : clignement ; rouge : visage perdu.").grid(row=2, column=0, sticky="w", padx=6, pady=(2, 8))
+        self._preview_box = pv
+        pv.grid_remove()
 
         # --- Profil
         pf = ttk.LabelFrame(root, text="Profil")
@@ -188,6 +258,28 @@ class ControlPanel:
         if not self._updating:
             self._send("set", field, bool(var.get()))
 
+    def _toggle_preview(self) -> None:
+        self.preview_enabled = not self.preview_enabled
+        if self.preview_enabled:
+            self._preview_box.grid()
+        else:
+            self._preview_box.grid_remove()
+            self._preview_label.config(image="", text="En attente de l'image…", width=PREVIEW_WIDTH // 8, height=12)
+            self._preview_photo = None
+            self._preview_shown_seq = -1
+        self._buttons["preview"].config(text="Masquer la caméra" if self.preview_enabled else "Voir la caméra")
+
+    def _update_preview(self) -> None:
+        pv = self._preview
+        if not self.preview_enabled or pv is None or pv[3] == self._preview_shown_seq:
+            return
+        w, h, data, seq = pv
+        # Image PPM brute : Tk l'affiche sans dépendance supplémentaire (master explicite, cf. CHECKS)
+        photo = tk.PhotoImage(master=self._root, data=b"P6\n%d %d\n255\n" % (w, h) + data, format="PPM")
+        self._preview_label.config(image=photo, text="", width=w, height=h)
+        self._preview_photo = photo  # garder une référence, sinon l'image disparaît
+        self._preview_shown_seq = seq
+
     def _refresh(self) -> None:
         if not self.is_running:
             self._root.destroy()
@@ -197,9 +289,10 @@ class ControlPanel:
             if s:
                 self._update_status(s)
                 self._sync_profile(s)
+            self._update_preview()
         except Exception as e:  # le panneau ne doit jamais faire tomber le tracker
             print(f"[panneau] Erreur d'affichage : {e}")
-        self._root.after(150, self._refresh)
+        self._root.after(100, self._refresh)
 
     def _set(self, key: str, text: str, color: str = "black") -> None:
         lbl = self._labels[key]
@@ -232,6 +325,10 @@ class ControlPanel:
         hint = s.get("hotkey_hint", "")
         if self._hint.cget("text") != hint:
             self._hint.config(text=hint)
+        if self.preview_enabled:
+            diag = s.get("diag", "")
+            if self._diag.cget("text") != diag:
+                self._diag.config(text=diag)
 
     def _sync_profile(self, s: dict) -> None:
         """Recharge les curseurs quand le profil change (pas pendant que l'utilisateur les bouge)."""

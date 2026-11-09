@@ -9,11 +9,25 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import numpy as np  # noqa: E402
+
 import profile as profiles  # noqa: E402
-from panel import CHECKS, GAZE_SLIDERS, HEAD_SLIDERS, PANEL_FIELDS  # noqa: E402
+from panel import CHECKS, GAZE_SLIDERS, HEAD_SLIDERS, PANEL_FIELDS, PREVIEW_WIDTH, make_preview  # noqa: E402
 
 
 class TestPanel(unittest.TestCase):
+    def test_vignette_camera(self):
+        frame = np.full((480, 640, 3), 128, np.uint8)
+        rgb = make_preview(frame, True, [(320.0, 240.0)])
+        self.assertEqual(rgb.shape, (240, PREVIEW_WIDTH, 3))  # proportions conservées
+        self.assertEqual(tuple(rgb[120, 160]), (255, 255, 0))   # point jaune sur l'iris (RGB)
+        self.assertEqual(tuple(rgb[0, 0]), (40, 180, 40))       # cadre vert : visage suivi
+        lost = make_preview(frame, False, [(320.0, 240.0)])
+        self.assertEqual(tuple(lost[0, 0]), (220, 40, 40))      # cadre rouge : visage perdu
+        self.assertEqual(tuple(lost[120, 160]), (128, 128, 128))  # pas de point sans visage
+        blink = make_preview(frame, True, [], blinking=True)
+        self.assertEqual(tuple(blink[0, 0]), (255, 140, 0))     # cadre orange : clignement
+
     def test_champs_du_panneau_existent_dans_le_profil(self):
         fields = set(profiles.Profile.__dataclass_fields__)
         for f in PANEL_FIELDS:

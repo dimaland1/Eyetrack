@@ -30,13 +30,19 @@ Une fenêtre « Eyetrack - Panneau de contrôle » s'ouvre avec le tracker :
 
 - **État** : visage détecté / perdu / clignement, images par seconde, envois à OpenTrack et plus
   long trou, regard actif ou coupé, calibration, pause ;
-- **Commandes** : recentrer, pause, regard on/off, calibrer, overlay, quitter ;
+- **Commandes** : recentrer, pause, regard on/off, calibrer, overlay, voir la caméra, quitter ;
+- **Caméra** (bouton « Voir la caméra », fermé par défaut) : aperçu de l'image avec les iris
+  détectés (points jaunes), un cadre vert / orange / rouge (visage suivi / clignement / perdu),
+  le temps de calcul et l'agitation. Utile pour régler le cadrage, la lumière et vérifier les
+  reflets des lunettes ; en jeu, le laisser fermé (il ne coûte alors rien) ;
 - **Profil** : changer de profil et sauvegarder les réglages dans son fichier JSON ;
 - **Réglages en direct** : gains de la tête, lissage de la tête au repos, part du regard, zone
   morte et lissage du regard, recalibration sur les clics. Les changements s'appliquent tout de
   suite ; ils ne sont gardés que si l'on clique sur « Sauvegarder les réglages ».
 
-Fermer le panneau arrête le tracker. Sans panneau : `python main.py --no-panel`.
+Fermer le panneau arrête le tracker. L'ancienne fenêtre « Moniteur » (vidéo agrandie et HUD
+de diagnostic complet) ne s'ouvre plus que sur demande : `python main.py --moniteur`, ou sans
+panneau : `python main.py --no-panel`.
 
 ### Raccourcis en jeu (globaux)
 
@@ -54,7 +60,7 @@ quand même les touches : éviter les lettres (dans BeamNG, `R` réinitialise le
 `Ctrl`/`Maj` passent les vitesses (boîte au clavier dans ETS2), prendre une touche seule.
 Si une combinaison est déjà prise par un autre programme, le tracker l'indique au démarrage.
 
-### Raccourcis de la fenêtre « Eyetrack - Moniteur »
+### Raccourcis de la fenêtre « Eyetrack - Moniteur » (avec `--moniteur`)
 
 | Touche | Action |
 |---|---|
@@ -89,8 +95,8 @@ Les clignements sont détectés : le regard est figé pendant un clignement.
 
 La webcam donne 30 images par seconde, mais le tracker envoie à OpenTrack **120 fois par
 seconde** : entre deux images, la pose est lissée et légèrement prédite, la caméra du jeu avance
-donc par petits pas réguliers. Le HUD affiche la fréquence réelle et le plus long trou entre deux
-envois (`trou max`, normalement 8 à 15 ms). Le filtre Accela d'OpenTrack reste conseillé ; son
+donc par petits pas réguliers. Le panneau affiche la fréquence réelle et le plus long trou entre deux
+envois (normalement 8 à 15 ms). Le filtre Accela d'OpenTrack reste conseillé ; son
 lissage peut être réduit si la caméra paraît en retard.
 
 La recalibration sur les clics n'apprend que les clics faits curseur **visible** : en jeu, quand
@@ -113,7 +119,7 @@ filters.py          filtre One Euro (+ médian), maintien et fondu en cas de per
 geometry.py         géométrie de l'écran (mm, pixels, angles)
 output.py           envoi UDP OpenTrack (120 Hz, prédiction, pause), courbe du regard, HUD
 overlay.py          overlay transparent click-through (Windows)
-panel.py            panneau de contrôle (état, commandes, réglages en direct)
+panel.py            panneau de contrôle (état, commandes, réglages en direct, aperçu caméra)
 hotkeys.py          raccourcis clavier globaux (Windows), actifs en jeu
 profile.py          profils JSON par jeu
 
@@ -153,12 +159,12 @@ prédiction, l'envoi à 120 Hz et les raccourcis. À relancer après toute modif
 
 La phase 1 (solidifier) est faite : raccourcis globaux, envoi à 120 Hz avec prédiction,
 recalibration au clic protégée en jeu, tests du sens des axes. Restent à vérifier en jeu :
-la fluidité réelle avec la vraie caméra (regarder `trou max` dans le HUD) et le confort des
+la fluidité réelle avec la vraie caméra (regarder « plus long trou » dans le panneau) et le confort des
 raccourcis par défaut.
 
 Ensuite :
 
-- **Phase 2 — confort** : panneau de contrôle fait (branche `panneau-controle`). Reste :
+- **Phase 2 — confort** : panneau de contrôle et aperçu caméra intégré faits. Reste :
   calibration guidée (note de qualité, refaire un point raté, cibles plus près des bords,
   alerte reflets sur les lunettes), icône dans la zone de notification.
 - **Phase 3 — paquet cadeau** : `.exe` installable (PyInstaller + installateur), assistant

@@ -162,8 +162,15 @@ class WebcamCapture:
                   f"{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} {fmt} -> {fps:.1f} fps mesurés")
             if best is None or fps > best[0] + 1.0:
                 best = (fps, effective)
-            if fps >= good_enough:
-                self.cap = cap  # mode satisfaisant : on le garde ouvert
+            if fps >= good_enough or (cand is cached and fps > 0):
+                # Mode satisfaisant, ou mode mémorisé qui délivre des images : on le garde ouvert.
+                # Un mode mémorisé lent l'est presque toujours à cause de la lumière (pose plus
+                # longue dans une pièce sombre) : rechercher un autre mode coûterait ~10 s par
+                # essai sans rien changer. Supprimer camera_mode.json pour relancer la recherche.
+                if fps < good_enough:
+                    print(f"[capture] Images/s faibles avec le mode mémorisé : pièce sombre ? "
+                          f"(plus de lumière = plus d'images/s)")
+                self.cap = cap
                 break
             cap.release()
 

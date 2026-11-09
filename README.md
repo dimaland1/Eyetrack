@@ -15,6 +15,33 @@ OpenTrack s'installe depuis le menu (option 8) ou avec
 
 ## Lancement
 
+### Pour jouer : `Eyetrack` sur le Bureau (sans terminal)
+
+`Eyetrack.exe` s'ouvre directement sur le panneau de contrôle, sans fenêtre de terminal. On le
+construit et l'installe une fois (puis après chaque mise à jour du code) avec l'**option E** du
+menu `Eyetrack.bat`, ou `python tools/build_exe.py` ; il faut quitter Eyetrack avant. Avant
+d'installer, l'exécutable construit passe un **auto-test** (`Eyetrack.exe --self-test` : modèles,
+MediaPipe, interface, sans caméra) ; s'il échoue, rien n'est installé et la version précédente
+reste en place.
+
+- **Double-clic** : reprend le dernier profil utilisé, ouvre OpenTrack s'il n'est pas déjà
+  ouvert (case « Ouvrir OpenTrack au lancement d'Eyetrack » dans « Réglages avancés »), puis
+  démarre le suivi avec le panneau et l'icône près de l'horloge.
+- **Déjà lancé ?** Un nouveau double-clic rouvre simplement le panneau (une seule instance : la
+  caméra et le port d'OpenTrack ne se partagent pas).
+- **Erreurs** (caméra introuvable ou occupée…) : affichées dans une fenêtre. Journal du dernier
+  lancement : `%LOCALAPPDATA%\Eyetrack\eyetrack.log` (le précédent : `eyetrack.old.log`).
+- **Où sont les fichiers ?** Le programme est dans `%LOCALAPPDATA%\Programs\Eyetrack`
+  (remplacé à chaque mise à jour). La calibration et les profils de l'exécutable sont dans
+  `%LOCALAPPDATA%\Eyetrack`, et une mise à jour ne les efface jamais. Ils sont séparés de ceux des
+  sources : on peut essayer une version en développement sans toucher à la calibration du jeu.
+  À la première installation, la calibration et les profils des sources y sont repris.
+- L'exécutable n'est pas signé : au premier lancement, Windows SmartScreen peut afficher
+  « Windows a protégé votre ordinateur » → « Informations complémentaires » → « Exécuter quand
+  même ».
+
+### Pour développer : `Eyetrack.bat` ou la ligne de commande
+
 Double-cliquer sur **`Eyetrack.bat`** et choisir dans le menu, ou en ligne de commande :
 
 ```bash
@@ -30,7 +57,8 @@ Une fenêtre « Eyetrack - Panneau de contrôle » s'ouvre avec le tracker :
 
 - **État** : visage détecté / perdu / clignement, reflets sur les lunettes, images par seconde,
   envois à OpenTrack et plus long trou, regard actif ou coupé, note de la calibration, pause ;
-- **Commandes** : recentrer, pause, regard on/off, calibrer, overlay, voir la caméra, quitter ;
+- **Commandes** : recentrer, pause, regard on/off, calibrer, overlay, voir la caméra, ouvrir
+  OpenTrack (la ligne « OpenTrack » de l'état passe en orange quand il est fermé), quitter ;
 - **Caméra** (bouton « Voir la caméra », fermé par défaut) : aperçu de l'image avec les iris
   détectés (points jaunes), un cadre vert / orange / rouge (visage suivi / clignement / perdu),
   le temps de calcul et l'agitation. Utile pour régler le cadrage, la lumière et vérifier les
@@ -135,7 +163,11 @@ profils de jeu (`ets2`, `flight_sim`, `racing`).
 ```
 Eyetrack.bat        lanceur (menu)
 main.py             point d'entrée : boucle capture -> visage -> regard -> filtres -> OpenTrack
-paths.py            chemins du projet (models/, data/, profiles/)
+eyetrack_app.py     point d'entrée d'Eyetrack.exe (dernier profil, OpenTrack, instance unique, erreurs)
+eyetrack.spec       recette PyInstaller de l'exécutable (utilisée par tools/build_exe.py)
+paths.py            chemins (sources : models/, data/, profiles/ ; exécutable : %LOCALAPPDATA%)
+app_settings.py     réglages de l'application (dernier profil, ouverture d'OpenTrack)
+winapp.py           application sans console : journal, fenêtres d'erreur, instance unique, OpenTrack
 
 capture.py          webcam : choix automatique du mode qui délivre le plus d'images
 face.py             MediaPipe Face Landmarker (478 points, iris, pose 6DoF), mode vidéo
@@ -152,7 +184,8 @@ hotkeys.py          raccourcis clavier globaux (Windows), actifs en jeu
 profile.py          profils JSON par jeu
 
 profiles/           profils de jeux (versionnés)
-tools/              diagnostics : diag_regard.py, diag_stabilite.py, validate.py ; make_icon.py
+tools/              diagnostics : diag_regard.py, diag_stabilite.py, validate.py ; make_icon.py ;
+                    build_exe.py (construit et installe Eyetrack.exe)
 assets/             icône de l'application (eyetrack.ico)
 tests/              tests automatiques (sens des axes, envoi OpenTrack, raccourcis, panneau)
 docs/               état de l'art de l'eye tracking webcam
@@ -197,9 +230,12 @@ Ensuite :
   reflets, icône de la zone de notification). À confirmer avec la vraie caméra et les lunettes :
   les seuils de reflet (« léger » dès 5 % de l'iris, « gênant » dès 15 %, valeur affichée dans
   l'aperçu caméra), choisis sans mesure réelle.
-- **Phase 3 — paquet cadeau** : `.exe` installable (PyInstaller + installateur), assistant
-  de premier lancement (caméra, écran, distance, calibration), profil OpenTrack fourni
-  (entrée UDP, Accela, axes réglés). Rappel : le modèle de regard est non commercial.
+- **Phase 3 — exécutable** : `Eyetrack.exe` fait (sans terminal, raccourci sur le Bureau,
+  dernier profil repris, OpenTrack ouvert automatiquement, instance unique, erreurs en fenêtre).
+  Reste, seulement pour le donner à quelqu'un d'autre : un vrai installateur, un assistant de
+  premier lancement (caméra, écran, distance, calibration) et un profil OpenTrack fourni (entrée
+  UDP, Accela, axes réglés). Avant toute diffusion, régler les licences : le modèle de regard est
+  non commercial.
 - **Phase 4 — bonus** : changement de profil automatique selon le jeu lancé, courbes de
   réponse de la tête (douces au centre, fortes sur les côtés), presets par jeu liant profil
   tracker et profil OpenTrack.

@@ -23,6 +23,7 @@ WM_RBUTTONUP = 0x0205
 WM_APP = 0x8000
 WM_TRAY = WM_APP + 1     # événements souris sur l'icône
 WM_REFRESH = WM_APP + 2  # mise à jour de l'infobulle / bulle demandée par un autre thread
+WM_SHOW_PANEL = WM_APP + 3  # une 2e instance d'Eyetrack demande d'afficher le panneau (winapp.py)
 
 NIM_ADD, NIM_MODIFY, NIM_DELETE = 0, 1, 2
 NIF_MESSAGE, NIF_ICON, NIF_TIP, NIF_INFO = 0x1, 0x2, 0x4, 0x10
@@ -223,6 +224,9 @@ class TrayIcon:
                 return 0
             if msg == WM_REFRESH:
                 self._refresh()
+                return 0
+            if msg == WM_SHOW_PANEL:
+                self._actions.put("show_panel")
                 return 0
             if msg == self._taskbar_created:  # explorateur relancé : l'icône a disparu
                 self._add_icon()

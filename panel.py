@@ -4,7 +4,7 @@ Le panneau tourne dans son propre thread (comme l'overlay) : Tkinter n'est pas t
 donc il n'échange avec la boucle principale que par deux canaux simples :
 - `publish(status)` : la boucle principale dépose l'état courant (dict) à chaque image ;
 - `poll()` : la boucle principale récupère les commandes de l'utilisateur, sous la forme
-  ("action", nom), ("profile", nom) ou ("set", champ_du_profil, valeur) ;
+  ("action", nom), ("profile", nom), ("set", champ_du_profil, valeur) ou ("app", réglage, valeur) ;
 - aperçu caméra : quand `preview_enabled` est vrai (bouton « Voir la caméra »), la boucle
   principale dépose une vignette avec `publish_preview()` (~10 images/s). Éteint par défaut :
   en jeu, l'image ne sert à rien et ne coûte alors rien.
@@ -39,6 +39,10 @@ ADVANCED_SLIDERS = [
 ]
 CHECKS = [
     ("recalib_on_click", "Recalibrer le regard sur les clics (bureau, curseur visible)"),
+]
+# Réglages de l'application (app_settings.py, pas les profils) : envoyés en ("app", clé, valeur)
+APP_CHECKS = [
+    ("launch_opentrack", "Ouvrir OpenTrack au lancement d'Eyetrack"),
 ]
 PANEL_FIELDS = [f for f, *_ in ESSENTIAL_SLIDERS + ADVANCED_SLIDERS] + [f for f, _ in CHECKS]
 
@@ -91,6 +95,8 @@ class ControlPanel:
         self._labels: dict[str, tk.Label] = {}
         self._scales: dict[str, tk.Scale] = {}
         self._checks: dict[str, tk.BooleanVar] = {}
+        self._app_checks: dict[str, tk.BooleanVar] = {}
+        self._shown_app: dict | None = None
         self._buttons: dict[str, ttk.Button] = {}
         self._profile_box: ttk.Combobox | None = None
         self._hint: tk.Label | None = None
@@ -171,6 +177,7 @@ class ControlPanel:
             self._labels.clear()
             self._scales.clear()
             self._checks.clear()
+            self._app_checks.clear()
             self._buttons.clear()
             self._profile_box = None
             self._hint = None
@@ -223,6 +230,9 @@ class ControlPanel:
             b = ttk.Button(cmd, text=text, width=19, command=command)
             b.grid(row=i // 3, column=i % 3, padx=4, pady=3)
             self._buttons[action] = b
+        self._buttons["opentrack"] = ttk.Button(cmd, text="Ouvrir OpenTrack", width=19,
+                                                command=lambda: self._send("action", "opentrack"))
+        self._buttons["opentrack"].grid(row=2, column=0, padx=4, pady=3)
         self._buttons["quit"] = ttk.Button(cmd, text="Quitter", width=19, command=lambda: self._send("action", "quit"))
         self._buttons["quit"].grid(row=2, column=2, padx=4, pady=3)
 
@@ -277,6 +287,12 @@ class ControlPanel:
                             command=lambda f=field, v=var: self._on_check(f, v)).grid(
                 row=len(ADVANCED_SLIDERS) + i, column=0, columnspan=2, sticky="w", padx=6, pady=2)
             self._checks[field] = var
+        for i, (key, text) in enumerate(APP_CHECKS):
+            var = tk.BooleanVar(master=root, value=False)
+            ttk.Checkbutton(adv, text=text, variable=var,
+                            command=lambda k=key, v=var: self._on_app_check(k, v)).grid(
+                row=len(ADVANCED_SLIDERS) + len(CHECKS) + i, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+            self._app_checks[key] = var
         self._advanced = adv
         adv.grid_remove()
 
@@ -321,6 +337,10 @@ class ControlPanel:
         if not self._updating:
             self._send("set", field, bool(var.get()))
 
+    def _on_app_check(self, key: str, var: tk.BooleanVar) -> None:
+        if not self._updating:
+            self._send("app", key, bool(var.get()))
+
     def _toggle_preview(self) -> None:
         self.preview_enabled = not self.preview_enabled
         if self.preview_enabled:
@@ -352,11 +372,14 @@ class ControlPanel:
             req = self._visibility_request
             if req is not None:
                 self._visibility_request = None
-                if req != self.is_visible:
+                # Afficher : toujours ré-appliqué (panneau réduit dans la barre des tâches ou caché
+                # derrière le jeu -> remis au premier plan)
+                if req or req != self.is_visible:
                     self._apply_visible(req)
             if s:
                 self._update_status(s)
                 self._sync_profile(s)
+                self._sync_app(s)
             self._update_preview()
         except Exception as e:  # le panneau ne doit jamais faire tomber le tracker
             print(f"[panneau] Erreur d'affichage : {e}")
@@ -376,7 +399,9 @@ class ControlPanel:
             self._set("face", "perdu (valeur maintenue)", RED)
         self._set("camera", f"{s.get('fps', 0):.0f} images/s", GREEN if s.get("fps", 0) >= 24 else ORANGE)
         hz, gap = s.get("send_hz", 0.0), s.get("gap_ms", 0.0)
-        if hz > 0:
+        if s.get("opentrack_running") is False:  # None : inconnu (OpenTrack sur un autre PC)
+            self._set("opentrack", "fermé : bouton « Ouvrir OpenTrack »", ORANGE)
+        elif hz > 0:
             self._set("opentrack", f"{hz:.0f} envois/s, plus long trou {gap:.0f} ms",
                       GREEN if gap <= 20 else ORANGE)
         else:
@@ -432,5 +457,19 @@ class ControlPanel:
                 if field in values:
                     var.set(bool(values[field]))
             self._root.update_idletasks()  # les rappels des curseurs partent ici, encore gardés
+        finally:
+            self._updating = False
+
+    def _sync_app(self, s: dict) -> None:
+        """Coche les réglages de l'application selon l'état envoyé par la boucle principale."""
+        app = s.get("app_settings")
+        if not app or app == self._shown_app:
+            return
+        self._shown_app = dict(app)
+        self._updating = True
+        try:
+            for key, var in self._app_checks.items():
+                if key in app:
+                    var.set(bool(app[key]))
         finally:
             self._updating = False

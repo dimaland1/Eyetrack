@@ -15,3 +15,7 @@ camera_mode.json
 diag_patches.png
 diag_stabilite.csv
 validation_*.csv
+
+# Exécutable (python tools/build_exe.py)
+build/
+dist/

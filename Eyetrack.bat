@@ -22,11 +22,13 @@ echo     9. Tests automatiques           (sens des axes, envoi OpenTrack)
 echo.
 echo   Installation
 echo     8. Installer OpenTrack          (winget)
+echo     E. Construire / mettre a jour Eyetrack.exe (raccourci sur le Bureau)
 echo.
 echo     Q. Quitter
 echo.
-choice /c 123456789Q /n /m "Votre choix : "
-if errorlevel 10 goto :eof
+choice /c 123456789EQ /n /m "Votre choix : "
+if errorlevel 11 goto :eof
+if errorlevel 10 goto exe
 if errorlevel 9 goto tests
 if errorlevel 8 goto install
 if errorlevel 7 goto validate
@@ -74,6 +76,10 @@ goto fin
 
 :tests
 python -m unittest discover -s tests -v
+goto fin
+
+:exe
+python tools\build_exe.py
 goto fin
 
 :install

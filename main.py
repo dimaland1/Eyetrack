@@ -13,6 +13,7 @@ Connecte de façon modulaire :
 
 from __future__ import annotations
 import argparse
+import atexit
 import sys
 import time
 import cv2
@@ -31,6 +32,8 @@ from hotkeys import GlobalHotkeys, format_hotkey
 from panel import ControlPanel, PANEL_FIELDS, make_preview
 from paths import ICON_FILE, data_path
 from tray import TrayIcon
+import app_settings
+import winapp
 from face import glare_on_iris, glare_label
 from profile import (
     Profile,
@@ -146,6 +149,7 @@ def parse_arguments() -> tuple[argparse.Namespace, Profile]:
 def main() -> None:
     """Exécute la boucle principale du tracker."""
     args, current_profile = parse_arguments()
+    app_cfg = app_settings.update(last_profile=current_profile.name)  # repris au prochain lancement
     available_profiles = list_profiles()
     current_prof_idx = (
         available_profiles.index(current_profile.name)
@@ -175,6 +179,18 @@ def main() -> None:
     print(f" OpenTrack UDP   : {args.host}:{args.port}")
     print("=" * 60)
 
+    # Icône près de l'horloge dès le démarrage (ouvrir la caméra et charger les modèles prend
+    # quelques secondes) : on voit tout de suite qu'Eyetrack se lance. Retirée même si le
+    # démarrage échoue (sinon icône fantôme jusqu'au survol de la souris).
+    tray: TrayIcon | None = None
+    icon_file = str(ICON_FILE) if ICON_FILE.exists() else None
+    if not args.no_panel:
+        tray = TrayIcon(icon_path=icon_file, tooltip="Eyetrack - démarrage (caméra, modèles)…")
+        if tray.start():
+            atexit.register(tray.stop)
+        else:
+            tray = None
+
     # 1. Capture
     try:
         capture = WebcamCapture(
@@ -184,7 +200,13 @@ def main() -> None:
             target_fps=args.fps,
         )
     except Exception as e:
-        print(f"[ERREUR] Impossible d'initialiser la capture : {e}", file=sys.stderr)
+        if tray is not None:
+            tray.stop()
+        winapp.report_error(
+            f"Impossible d'ouvrir la caméra (n° {args.camera}).\n\n{e}\n\n"
+            "Vérifiez qu'elle est branchée et qu'aucune autre application (visio, navigateur, "
+            "logiciel de la webcam…) ne l'utilise, puis relancez Eyetrack.",
+            title="Eyetrack - caméra introuvable")
         return
 
     print(f"[capture] Caméra active : {capture.actual_width}x{capture.actual_height} @ {capture.actual_fps:.1f} fps")
@@ -327,6 +349,7 @@ def main() -> None:
         nonlocal current_profile, current_prof_idx, available_profiles, profile_version, profile_values
         available_profiles = list_profiles()
         current_profile = load_profile(name)
+        app_settings.update(last_profile=current_profile.name)
         if current_profile.name in available_profiles:
             current_prof_idx = available_profiles.index(current_profile.name)
         apply_profile_settings(current_profile)
@@ -340,17 +363,16 @@ def main() -> None:
 
     # Panneau de contrôle (réglages en direct, commandes, état)
     panel: ControlPanel | None = None
-    tray: TrayIcon | None = None
-    icon_file = str(ICON_FILE) if ICON_FILE.exists() else None
     if not args.no_panel:
-        # Icône de la zone de notification : la croix du panneau le réduit au lieu de tout arrêter
-        tray = TrayIcon(icon_path=icon_file, tooltip="Eyetrack - suivi actif")
-        if not tray.start():
-            tray = None
+        # Avec l'icône près de l'horloge, la croix du panneau le réduit au lieu de tout arrêter
         panel = ControlPanel(close_to_tray=tray is not None, icon_path=icon_file)
         panel.start()
     panel_hidden_notified = False
     tray_state = None
+    # OpenTrack ouvert ? (vérifié toutes les 2 s ; inconnu si OpenTrack tourne sur un autre PC)
+    opentrack_local = args.host in ("127.0.0.1", "localhost", "::1")
+    opentrack_running: bool | None = None
+    next_opentrack_check = 0.0
 
     def read_for_calibration():
         """Capture pour la calibration avec le même effet miroir que la boucle principale.
@@ -607,6 +629,9 @@ def main() -> None:
                 diag_text += (f"\nAgitation (1 s, si immobile) : tête {jitter['head_deg']:.2f}°, "
                               f"regard {jitter['gaze_px']:.0f} px")
             diag_text += f"\nReflets sur les iris : {glare_level * 100:.1f} %"
+            if opentrack_local and panel is not None and time.perf_counter() >= next_opentrack_check:
+                next_opentrack_check = time.perf_counter() + 2.0
+                opentrack_running = winapp.is_process_running(winapp.OPENTRACK_EXE)
 
             def panel_status(calibrating: bool = False) -> dict:
                 return {
@@ -619,6 +644,8 @@ def main() -> None:
                     "hotkey_hint": hotkey_hint, "calibrating": calibrating,
                     "diag": diag_text, "glare": glare_level, "glare_label": glare_label(glare_level),
                     "calib_quality": calibration_mgr.quality_label, "calib_deg": calibration_mgr.quality_deg,
+                    "opentrack_running": opentrack_running,
+                    "app_settings": {"launch_opentrack": app_cfg["launch_opentrack"]},
                 }
 
             if panel is not None:
@@ -648,6 +675,9 @@ def main() -> None:
                     continue
                 if kind == "profile":
                     switch_profile(command[1])
+                    continue
+                if kind == "app":  # réglage de l'application (pas du profil), enregistré tout de suite
+                    app_cfg = app_settings.update(**{command[1]: command[2]})
                     continue
                 action = command[1]
                 if action == "quit":
@@ -690,6 +720,15 @@ def main() -> None:
                         switch_profile(names[(current_prof_idx + 1) % len(names)])
                 elif action == "toggle_panel" and panel is not None:
                     panel.toggle_visible()
+                elif action == "show_panel" and panel is not None:  # Eyetrack relancé alors qu'il tourne
+                    panel.show()
+                elif action == "opentrack":
+                    result = winapp.launch_opentrack(app_cfg["opentrack_path"])
+                    print(f"[opentrack] {result}")
+                    if result == "introuvable" and tray is not None:
+                        tray.notify("OpenTrack introuvable", "Installez OpenTrack (option 8 du menu Eyetrack.bat) "
+                                    "ou indiquez son chemin dans app_settings.json.")
+                    next_opentrack_check = time.perf_counter() + 1.0
                 elif action == "panel_hidden" and tray is not None and not panel_hidden_notified:
                     panel_hidden_notified = True
                     tray.notify("Eyetrack continue", "Le suivi continue en arrière-plan. Cliquez sur l'icône "

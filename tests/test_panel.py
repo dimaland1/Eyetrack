@@ -43,6 +43,29 @@ class TestPanel(unittest.TestCase):
             for field, _label in CHECKS:
                 self.assertIsInstance(getattr(p, field), bool)
 
+    def test_aucun_objet_tk_garde_apres_fermeture(self):
+        # Un objet Tk (case à cocher, image…) encore référencé après la fermeture est détruit plus
+        # tard par le thread principal : « main thread is not in main loop » puis plantage de Tcl
+        # à la sortie (code 0x80000003, constaté avec Eyetrack.exe).
+        import tkinter as tk
+        from panel import ControlPanel
+
+        def tk_objects(v):
+            if isinstance(v, (tk.Variable, tk.Misc, tk.Image)):
+                return [v]
+            if isinstance(v, dict):
+                return [o for x in v.values() for o in tk_objects(x)]
+            if isinstance(v, (list, tuple, set)):
+                return [o for x in v for o in tk_objects(x)]
+            return []
+
+        panel = ControlPanel()
+        panel.start()
+        self.assertTrue(panel.is_running)
+        panel.stop()
+        kept = {name: tk_objects(v) for name, v in vars(panel).items() if tk_objects(v)}
+        self.assertEqual(kept, {})
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

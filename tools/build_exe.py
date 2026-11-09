@@ -1,0 +1,198 @@
+"""Construit Eyetrack.exe et l'installe pour l'utilisateur courant.
+
+Usage (depuis le dossier du projet, ou option E du menu Eyetrack.bat) :
+    python tools/build_exe.py               construire puis installer / mettre à jour
+    python tools/build_exe.py --build-only  construire seulement (dist/Eyetrack/Eyetrack.exe)
+
+Installation (sans droits administrateur) :
+- programme : %LOCALAPPDATA%\\Programs\\Eyetrack, remplacé à chaque mise à jour ;
+- données   : %LOCALAPPDATA%\\Eyetrack (calibration, profils, journal), jamais effacées. À la
+  première installation, la calibration, le cache caméra et les profils des sources y sont
+  copiés, sans rien écraser : pas besoin de se recalibrer ;
+- raccourcis « Eyetrack » sur le Bureau et dans le menu Démarrer.
+
+Le programme installé est indépendant du dossier des sources : on peut continuer à développer
+(nouvelle branche, essais) sans toucher à l'exécutable utilisé pour jouer.
+"""
+
+from __future__ import annotations
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+import winapp  # noqa: E402
+
+LOCAL = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+APP_DIR = LOCAL / "Programs" / "Eyetrack"
+USER_DIR = LOCAL / "Eyetrack"
+DIST_DIR = ROOT / "dist" / "Eyetrack"
+MODELS = ["face_landmarker.task", "mobileone_s0_gaze.onnx"]
+DATA_TO_COPY = ["calibration_*.npz", "calibration_samples_*.npz", "camera_mode.json", "app_settings.json"]
+NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
+
+
+def git(*args: str) -> str:
+    try:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+
+
+def write_build_info() -> str:
+    commit = git("rev-parse", "--short", "HEAD") or "inconnu"
+    if git("status", "--porcelain", "--untracked-files=no"):
+        commit += " (modifié)"
+    branch = git("branch", "--show-current")
+    info = {"commit": commit, "branch": branch, "date": time.strftime("%Y-%m-%d %H:%M")}
+    (ROOT / "build").mkdir(exist_ok=True)
+    (ROOT / "build" / "build_info.json").write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
+    return f"{commit} ({branch}) du {info['date']}"
+
+
+def build() -> None:
+    missing = [m for m in MODELS if not (ROOT / "models" / m).is_file()]
+    if missing:
+        sys.exit(f"Modèles absents de models/ : {', '.join(missing)}.\n"
+                 "Lancez une fois le tracker depuis les sources (option 1) : ils sont téléchargés.")
+    print(f"Construction de la version {write_build_info()}…")
+    cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--log-level", "WARN", str(ROOT / "eyetrack.spec")]
+    if subprocess.run(cmd, cwd=ROOT).returncode != 0:
+        sys.exit("Échec de PyInstaller (voir les messages ci-dessus).")
+    if not (DIST_DIR / "Eyetrack.exe").is_file():
+        sys.exit(f"Eyetrack.exe introuvable dans {DIST_DIR}.")
+    size = sum(f.stat().st_size for f in DIST_DIR.rglob("*") if f.is_file()) / 1e6
+    print(f"Construit : {DIST_DIR / 'Eyetrack.exe'} ({size:.0f} Mo au total)")
+
+
+def _close_windows_of(pid: int) -> list[str]:
+    """Ferme les fenêtres visibles d'un processus (fenêtre d'erreur) et renvoie leurs textes."""
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+    texts: list[str] = []
+    found: list[int] = []
+    enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def on_window(hwnd, _):
+        owner = wintypes.DWORD()
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and u.IsWindowVisible(hwnd):
+            found.append(hwnd)
+        return True
+
+    def on_child(hwnd, _):
+        buf = ctypes.create_unicode_buffer(4096)
+        u.SendMessageW(hwnd, 0x000D, 4096, buf)  # WM_GETTEXT (marche aussi d'un processus à l'autre)
+        if buf.value.strip():
+            texts.append(buf.value.strip())
+        return True
+
+    u.EnumWindows(enum_proc(on_window), 0)
+    for hwnd in found:
+        u.EnumChildWindows(hwnd, enum_proc(on_child), 0)
+        u.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+    return texts
+
+
+def self_test(exe: Path) -> None:
+    """Lance « Eyetrack.exe --self-test » : arrêt (sans rien installer) si le paquet est cassé."""
+    log = USER_DIR / "eyetrack.selftest.log"
+    print("Auto-test de l'exécutable (modèles, MediaPipe, interface)…")
+    p = subprocess.Popen([str(exe), "--self-test"], cwd=exe.parent)
+    # L'auto-test n'ouvre aucune fenêtre : une fenêtre visible = message d'erreur du lanceur
+    deadline = time.monotonic() + 120
+    while p.poll() is None:
+        texts = _close_windows_of(p.pid) if time.monotonic() > deadline else []
+        if not texts and time.monotonic() <= deadline:
+            time.sleep(0.5)
+            texts = _close_windows_of(p.pid)
+        if texts or time.monotonic() > deadline:
+            time.sleep(1)
+            p.kill()
+            detail = "\n".join(texts) or "aucune réponse en 2 minutes"
+            sys.exit(f"ÉCHEC de l'auto-test : rien n'a été installé.\n{detail}")
+    code = p.returncode
+    lines = log.read_text(encoding="utf-8", errors="replace").splitlines() if log.exists() else []
+    if code != 0 or not any(line.startswith("SELFTEST OK") for line in lines):
+        sys.exit("ÉCHEC de l'auto-test : rien n'a été installé.\n" + "\n".join(lines[-15:]))
+    print(f"Auto-test : {next(line for line in lines if line.startswith('SELFTEST OK'))}")
+
+
+def install_program() -> None:
+    if winapp.is_process_running("Eyetrack.exe"):
+        sys.exit("Eyetrack.exe est en cours d'exécution : quittez-le (clic droit sur l'icône près de "
+                 "l'horloge > Quitter), puis relancez la mise à jour.")
+    if APP_DIR.exists():
+        # Garde-fou : ne supprimer que l'ancienne installation d'Eyetrack, jamais un autre dossier
+        if not (APP_DIR / "Eyetrack.exe").is_file() and any(APP_DIR.iterdir()):
+            sys.exit(f"{APP_DIR} existe mais ne contient pas Eyetrack.exe : rien n'est remplacé.")
+        shutil.rmtree(APP_DIR)
+    shutil.copytree(DIST_DIR, APP_DIR)
+    print(f"Installé : {APP_DIR / 'Eyetrack.exe'}")
+
+
+def copy_user_data() -> None:
+    """Première installation : reprend la calibration et les profils des sources (sans écraser)."""
+    copied = []
+    for pattern, src_dir, dst_dir in [(p, ROOT / "data", USER_DIR / "data") for p in DATA_TO_COPY] + \
+                                     [("*.json", ROOT / "profiles", USER_DIR / "profiles")]:
+        for src in sorted(src_dir.glob(pattern)):
+            dst = dst_dir / src.name
+            if not dst.exists():
+                dst_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                copied.append(f"{dst_dir.name}/{src.name}")
+    if copied:
+        print(f"Repris des sources dans {USER_DIR} : {', '.join(copied)}")
+    else:
+        print(f"Données conservées dans {USER_DIR} (rien à reprendre des sources)")
+
+
+def create_shortcuts() -> None:
+    """Raccourcis Bureau et menu Démarrer (dossiers réels, même si le Bureau est sur OneDrive)."""
+    script = (
+        "$ErrorActionPreference = 'Stop'; $sh = New-Object -ComObject WScript.Shell; "
+        "foreach ($dir in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) { "
+        "  $lnk = $sh.CreateShortcut((Join-Path $dir 'Eyetrack.lnk')); "
+        "  $lnk.TargetPath = $env:EYETRACK_EXE; $lnk.WorkingDirectory = $env:EYETRACK_DIR; "
+        "  $lnk.IconLocation = $env:EYETRACK_EXE + ',0'; "
+        "  $lnk.Description = 'Suivi de la tete et du regard pour OpenTrack'; $lnk.Save(); "
+        "  Write-Output (Join-Path $dir 'Eyetrack.lnk') }"
+    )
+    env = dict(os.environ, EYETRACK_EXE=str(APP_DIR / "Eyetrack.exe"), EYETRACK_DIR=str(APP_DIR))
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                       env=env, capture_output=True, text=True, creationflags=NO_WINDOW)
+    if r.returncode != 0:
+        print(f"Raccourcis non créés : {r.stderr.strip()}")
+        return
+    for line in r.stdout.splitlines():
+        print(f"Raccourci : {line.strip()}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Construit et installe Eyetrack.exe")
+    parser.add_argument("--build-only", action="store_true", help="Construire sans installer")
+    parser.add_argument("--install-only", action="store_true", help="Installer la dernière construction (dist/)")
+    args = parser.parse_args()
+    if not args.install_only:
+        build()
+    elif not (DIST_DIR / "Eyetrack.exe").is_file():
+        sys.exit(f"Aucune construction dans {DIST_DIR} : lancez d'abord sans --install-only.")
+    self_test(DIST_DIR / "Eyetrack.exe")
+    if args.build_only:
+        return
+    install_program()
+    copy_user_data()
+    create_shortcuts()
+    print("\nC'est prêt : double-cliquez sur « Eyetrack » sur le Bureau.")
+
+
+if __name__ == "__main__":
+    main()

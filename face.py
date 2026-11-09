@@ -69,6 +69,42 @@ class FaceData:
     eye_openness: float = 0.0
 
 
+# Reflets (lunettes, lampe, écran) : part de pixels quasi saturés sur le disque de l'iris.
+# Le petit reflet normal de la cornée (point lumineux de l'écran) reste sous ~3 % ; un reflet
+# de verre de lunettes couvre une bonne partie de l'iris et fait sauter le suivi du regard.
+GLARE_PIXEL_LEVEL = 235   # niveau de gris considéré comme saturé
+GLARE_LIGHT = 0.05        # au-delà : reflet léger
+GLARE_STRONG = 0.15       # au-delà : reflet gênant (alerte)
+
+
+def glare_on_iris(frame_bgr: np.ndarray, face: "FaceData") -> float:
+    """Part (0..1) de pixels saturés sur les iris (le pire des deux yeux) ; 0 sans visage."""
+    if not face.detected or face.iris_diameter_px <= 0 or frame_bgr is None:
+        return 0.0
+    h, w = frame_bgr.shape[:2]
+    r = max(3.0, 0.75 * float(face.iris_diameter_px))  # disque un peu plus large que l'iris
+    worst = 0.0
+    for cx, cy in (face.left_iris_px, face.right_iris_px):
+        x0, x1 = int(max(0, cx - r)), int(min(w, cx + r + 1))
+        y0, y1 = int(max(0, cy - r)), int(min(h, cy + r + 1))
+        if x1 - x0 < 2 or y1 - y0 < 2:
+            continue
+        gray = cv2.cvtColor(frame_bgr[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY)
+        yy, xx = np.mgrid[y0:y1, x0:x1]
+        disk = (xx - cx) ** 2 + (yy - cy) ** 2 <= r * r
+        if disk.any():
+            worst = max(worst, float((gray[disk] >= GLARE_PIXEL_LEVEL).mean()))
+    return worst
+
+
+def glare_label(value: float) -> str:
+    if value >= GLARE_STRONG:
+        return "gênant"
+    if value >= GLARE_LIGHT:
+        return "léger"
+    return "aucun"
+
+
 def pose_from_matrix(mat: np.ndarray) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     """Matrice de transformation faciale MediaPipe (4x4) -> (x, y, z en cm), (yaw, pitch, roll en °).
 

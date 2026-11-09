@@ -10,7 +10,8 @@ donc il n'échange avec la boucle principale que par deux canaux simples :
   en jeu, l'image ne sert à rien et ne coûte alors rien.
 
 Les réglages modifient le profil actif en direct ; « Sauvegarder » les écrit dans son JSON.
-Fermer le panneau arrête le tracker.
+Avec l'icône de la zone de notification, fermer le panneau le réduit seulement (le tracker
+continue) ; sans elle, fermer le panneau arrête le tracker.
 """
 
 from __future__ import annotations
@@ -23,21 +24,23 @@ import cv2
 import numpy as np
 
 # Curseurs : (champ du profil, libellé, min, max, pas)
-HEAD_SLIDERS = [
-    ("head_yaw_gain", "Gain gauche / droite", 0.5, 4.0, 0.1),
-    ("head_pitch_gain", "Gain haut / bas", 0.5, 3.0, 0.1),
-    ("pose_min_cutoff", "Lissage au repos (bas = plus calme)", 0.2, 3.0, 0.1),
+# Toujours visibles : les trois réglages qu'on change vraiment d'un jeu à l'autre.
+ESSENTIAL_SLIDERS = [
+    ("head_yaw_gain", "Tête : amplification gauche / droite", 0.5, 4.0, 0.1),
+    ("gaze_yaw_gain", "Regard : part dans la caméra", 0.0, 1.5, 0.05),
+    ("gaze_smoothing_s", "Regard : lissage (s, haut = plus calme)", 0.05, 1.0, 0.05),
 ]
-GAZE_SLIDERS = [
-    ("gaze_yaw_gain", "Part du regard gauche / droite", 0.0, 1.5, 0.05),
-    ("gaze_pitch_gain", "Part du regard haut / bas", 0.0, 1.5, 0.05),
-    ("gaze_deadzone", "Zone morte au centre", 0.0, 0.3, 0.01),
-    ("gaze_smoothing_s", "Lissage (s, haut = plus calme)", 0.05, 1.0, 0.05),
+# Section « Réglages avancés », repliée par défaut
+ADVANCED_SLIDERS = [
+    ("head_pitch_gain", "Tête : amplification haut / bas", 0.5, 3.0, 0.1),
+    ("pose_min_cutoff", "Tête : lissage au repos (bas = plus calme)", 0.2, 3.0, 0.1),
+    ("gaze_pitch_gain", "Regard : part haut / bas", 0.0, 1.5, 0.05),
+    ("gaze_deadzone", "Regard : zone morte au centre", 0.0, 0.3, 0.01),
 ]
 CHECKS = [
     ("recalib_on_click", "Recalibrer le regard sur les clics (bureau, curseur visible)"),
 ]
-PANEL_FIELDS = [f for f, *_ in HEAD_SLIDERS + GAZE_SLIDERS] + [f for f, _ in CHECKS]
+PANEL_FIELDS = [f for f, *_ in ESSENTIAL_SLIDERS + ADVANCED_SLIDERS] + [f for f, _ in CHECKS]
 
 GREEN, RED, ORANGE, GREY = "#1a7f37", "#c62828", "#e65100", "#666666"
 
@@ -68,9 +71,17 @@ def make_preview(frame_bgr: np.ndarray, face_detected: bool, iris_px: list[tuple
 class ControlPanel:
     """Fenêtre de contrôle du tracker, exécutée dans un thread dédié."""
 
-    def __init__(self, title: str = "Eyetrack - Panneau de contrôle") -> None:
+    def __init__(self, title: str = "Eyetrack - Panneau de contrôle", close_to_tray: bool = False,
+                 icon_path: str | None = None) -> None:
         self.title = title
+        self.close_to_tray = close_to_tray  # croix = réduire (icône de la zone de notification)
+        self.icon_path = icon_path
         self.is_running = False
+        # Visibilité : demandée par la boucle principale (icône), appliquée par le thread Tk
+        self.is_visible = True
+        self._visibility_request: bool | None = None
+        self._advanced: ttk.LabelFrame | None = None
+        self._advanced_btn: ttk.Button | None = None
         self._commands: queue.Queue = queue.Queue()
         self._status: dict = {}
         self._thread: threading.Thread | None = None
@@ -109,6 +120,18 @@ class ControlPanel:
     def publish(self, status: dict) -> None:
         """Dépose l'état courant du tracker (remplacement atomique du dict)."""
         self._status = status
+
+    def show(self) -> None:
+        self._visibility_request = True
+
+    def hide(self) -> None:
+        self._visibility_request = False
+
+    def toggle_visible(self) -> bool:
+        """Affiche ou masque le panneau ; renvoie le nouvel état demandé."""
+        target = not self.is_visible
+        self._visibility_request = target
+        return target
 
     def publish_preview(self, rgb: np.ndarray) -> None:
         """Dépose une vignette RGB (uint8, h x w x 3) pour l'aperçu caméra."""
@@ -155,6 +178,8 @@ class ControlPanel:
             self._preview_label = None
             self._preview_photo = None
             self._diag = None
+            self._advanced = None
+            self._advanced_btn = None
             self._root = None
             import gc
             gc.collect()
@@ -164,17 +189,22 @@ class ControlPanel:
         self._root = root
         root.title(self.title)
         root.resizable(False, False)
-        root.protocol("WM_DELETE_WINDOW", lambda: self._send("action", "quit"))
+        root.protocol("WM_DELETE_WINDOW", self._on_close)
+        if self.icon_path:
+            try:
+                root.iconbitmap(self.icon_path)
+            except Exception:
+                pass
         pad = {"padx": 8, "pady": 4}
 
         # --- État
         st = ttk.LabelFrame(root, text="État")
         st.grid(row=0, column=0, sticky="ew", **pad)
-        rows = [("face", "Visage"), ("camera", "Caméra"), ("opentrack", "OpenTrack"),
+        rows = [("face", "Visage"), ("glare", "Reflets lunettes"), ("camera", "Caméra"), ("opentrack", "OpenTrack"),
                 ("gaze", "Regard"), ("calib", "Calibration"), ("mode", "Caméra du jeu")]
         for i, (key, text) in enumerate(rows):
-            tk.Label(st, text=text + " :", anchor="w", width=13).grid(row=i, column=0, sticky="w", padx=6)
-            lbl = tk.Label(st, text="…", anchor="w", width=34)
+            tk.Label(st, text=text + " :", anchor="w", width=15).grid(row=i, column=0, sticky="w", padx=6)
+            lbl = tk.Label(st, text="…", anchor="w", width=40)
             lbl.grid(row=i, column=1, sticky="w")
             self._labels[key] = lbl
 
@@ -221,32 +251,65 @@ class ControlPanel:
         ttk.Button(pf, text="Sauvegarder les réglages", command=lambda: self._send("action", "save")).grid(
             row=0, column=1, padx=6, pady=4)
 
-        # --- Réglages
+        # --- Réglages (essentiels) et réglages avancés (repliés)
         def sliders(parent, spec):
             for i, (field, text, lo, hi, step) in enumerate(spec):
-                tk.Label(parent, text=text, anchor="w", width=32).grid(row=i, column=0, sticky="w", padx=6)
-                sc = tk.Scale(parent, from_=lo, to=hi, resolution=step, orient="horizontal", length=230,
+                tk.Label(parent, text=text, anchor="w", width=38).grid(row=i, column=0, sticky="w", padx=6)
+                sc = tk.Scale(parent, from_=lo, to=hi, resolution=step, orient="horizontal", length=200,
                               showvalue=True, command=lambda v, f=field, s=step: self._on_scale(f, v, s))
                 sc.grid(row=i, column=1, padx=6)
                 self._scales[field] = sc
 
-        head = ttk.LabelFrame(root, text="Tête")
-        head.grid(row=3, column=0, sticky="ew", **pad)
-        sliders(head, HEAD_SLIDERS)
-        gaze = ttk.LabelFrame(root, text="Regard")
-        gaze.grid(row=4, column=0, sticky="ew", **pad)
-        sliders(gaze, GAZE_SLIDERS)
+        rg = ttk.LabelFrame(root, text="Réglages")
+        rg.grid(row=3, column=0, sticky="ew", **pad)
+        sliders(rg, ESSENTIAL_SLIDERS)
+        self._advanced_btn = ttk.Button(rg, text="Réglages avancés ▸", command=self._toggle_advanced)
+        self._advanced_btn.grid(row=len(ESSENTIAL_SLIDERS), column=0, sticky="w", padx=6, pady=(2, 6))
+
+        adv = ttk.LabelFrame(root, text="Réglages avancés")
+        adv.grid(row=4, column=0, sticky="ew", **pad)
+        sliders(adv, ADVANCED_SLIDERS)
         for i, (field, text) in enumerate(CHECKS):
             # master explicite : sinon Tkinter prend la première fenêtre Tk du programme, celle de
             # l'overlay (autre thread) -> case affichée « − » et variable lue dans le mauvais thread
             var = tk.BooleanVar(master=root, value=False)
-            ttk.Checkbutton(gaze, text=text, variable=var,
+            ttk.Checkbutton(adv, text=text, variable=var,
                             command=lambda f=field, v=var: self._on_check(f, v)).grid(
-                row=len(GAZE_SLIDERS) + i, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+                row=len(ADVANCED_SLIDERS) + i, column=0, columnspan=2, sticky="w", padx=6, pady=2)
             self._checks[field] = var
+        self._advanced = adv
+        adv.grid_remove()
 
         self._hint = tk.Label(root, text="", fg=GREY, justify="left")
         self._hint.grid(row=5, column=0, sticky="w", padx=10, pady=(0, 8))
+
+    def _toggle_advanced(self) -> None:
+        self._advanced_open = not getattr(self, "_advanced_open", False)
+        if self._advanced_open:
+            self._advanced.grid()
+            self._advanced_btn.config(text="Réglages avancés ▾")
+        else:
+            self._advanced.grid_remove()
+            self._advanced_btn.config(text="Réglages avancés ▸")
+
+    def _on_close(self) -> None:
+        """Croix de la fenêtre : réduire dans la zone de notification, ou quitter sans icône."""
+        if self.close_to_tray:
+            self._apply_visible(False)
+            self._send("action", "panel_hidden")
+        else:
+            self._send("action", "quit")
+
+    def _apply_visible(self, visible: bool) -> None:
+        if visible:
+            self._root.deiconify()
+            self._root.lift()
+            self._root.attributes("-topmost", True)   # passer devant le jeu ou le bureau…
+            self._root.after(300, lambda: self._root.attributes("-topmost", False))  # …sans y rester
+            self._root.focus_force()
+        else:
+            self._root.withdraw()
+        self.is_visible = visible
 
     def _on_scale(self, field: str, value: str, step: float) -> None:
         if self._updating:
@@ -286,6 +349,11 @@ class ControlPanel:
             return
         s = self._status
         try:
+            req = self._visibility_request
+            if req is not None:
+                self._visibility_request = None
+                if req != self.is_visible:
+                    self._apply_visible(req)
             if s:
                 self._update_status(s)
                 self._sync_profile(s)
@@ -314,9 +382,22 @@ class ControlPanel:
         else:
             self._set("opentrack", "en attente du visage", GREY)
         self._set("gaze", "actif" if s.get("gaze_enabled") else "coupé", GREEN if s.get("gaze_enabled") else GREY)
+        glare, glare_lbl = s.get("glare", 0.0), s.get("glare_label", "aucun")
+        if not s.get("face"):
+            self._set("glare", "—", GREY)
+        else:
+            advice = " : bougez la lampe ou l'écran" if glare_lbl == "gênant" else ""
+            self._set("glare", f"{glare_lbl} ({glare * 100:.0f} % de l'iris){advice}",
+                      {"aucun": GREEN, "léger": ORANGE}.get(glare_lbl, RED))
         rls = s.get("rls", 0)
-        self._set("calib", ("calibré" + (f" (+{rls} clics)" if rls else "")) if s.get("calibrated")
-                  else "non calibré : bouton « Calibrer »", GREEN if s.get("calibrated") else RED)
+        if s.get("calibrated"):
+            q, qdeg = s.get("calib_quality", "inconnue"), s.get("calib_deg", float("nan"))
+            text = "calibré" if q == "inconnue" else f"qualité {q} ({qdeg:.1f}°)"
+            if rls:
+                text += f", +{rls} clics"
+            self._set("calib", text, {"bonne": GREEN, "inconnue": GREEN, "moyenne": ORANGE}.get(q, RED))
+        else:
+            self._set("calib", "non calibré : bouton « Calibrer le regard »", RED)
         self._set("mode", "PAUSE : au centre" if s.get("paused") else "suit la tête",
                   ORANGE if s.get("paused") else GREEN)
         self._buttons["pause"].config(text="Reprendre" if s.get("paused") else "Pause")

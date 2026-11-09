@@ -29,7 +29,9 @@ from output import OpenTrackSender, Visualizer, OutputConfig
 from overlay import GazeOverlay
 from hotkeys import GlobalHotkeys, format_hotkey
 from panel import ControlPanel, PANEL_FIELDS, make_preview
-from paths import data_path
+from paths import ICON_FILE, data_path
+from tray import TrayIcon
+from face import glare_on_iris, glare_label
 from profile import (
     Profile,
     load_profile,
@@ -288,6 +290,7 @@ def main() -> None:
     prev_mouse_down = False
     blinking = False
     frame_count = 0
+    glare_level = 0.0
 
     # Le profil actif reflète ce qui tourne réellement (options de la ligne de commande comprises) :
     # le panneau l'affiche et « Sauvegarder » l'écrit tel quel.
@@ -337,9 +340,17 @@ def main() -> None:
 
     # Panneau de contrôle (réglages en direct, commandes, état)
     panel: ControlPanel | None = None
+    tray: TrayIcon | None = None
+    icon_file = str(ICON_FILE) if ICON_FILE.exists() else None
     if not args.no_panel:
-        panel = ControlPanel()
+        # Icône de la zone de notification : la croix du panneau le réduit au lieu de tout arrêter
+        tray = TrayIcon(icon_path=icon_file, tooltip="Eyetrack - suivi actif")
+        if not tray.start():
+            tray = None
+        panel = ControlPanel(close_to_tray=tray is not None, icon_path=icon_file)
         panel.start()
+    panel_hidden_notified = False
+    tray_state = None
 
     def read_for_calibration():
         """Capture pour la calibration avec le même effet miroir que la boucle principale.
@@ -391,7 +402,13 @@ def main() -> None:
                   f"({hotkeys.errors.get(action, 'erreur inconnue')}) ; changer « hotkey_{action} » dans le profil")
     print(f"Envoi OpenTrack : {args.send_rate:.0f} Hz" if args.send_rate > 0 else "Envoi OpenTrack : une fois par image")
     print(f"Recalibration au clic : {'active (curseur visible seulement)' if not args.no_recalib else 'désactivée'}")
-    print("Panneau de contrôle : " + ("ouvert (le fermer arrête le tracker)" if panel else "désactivé (--no-panel)") + "\n")
+    if panel is None:
+        print("Panneau de contrôle : désactivé (--no-panel)\n")
+    elif tray is not None:
+        print("Panneau de contrôle : ouvert ; la croix le réduit dans la zone de notification "
+              "(icône Eyetrack près de l'horloge : clic = rouvrir, clic droit = menu, Quitter)\n")
+    else:
+        print("Panneau de contrôle : ouvert (le fermer arrête le tracker)\n")
 
     step_latencies: dict[str, float] = {}
     # Mesure de l'agitation sur ~1 s glissante (écart-type des sorties filtrées)
@@ -431,6 +448,8 @@ def main() -> None:
             blinking = False
             if face_data.detected:
                 blinking = blink_detector.update(face_data.eye_openness, timestamp)
+                # Reflets sur les iris (lunettes, lampe) : moyenne glissante pour l'affichage
+                glare_level += 0.2 * (glare_on_iris(frame, face_data) - glare_level)
                 # Après une vraie perte de suivi, on repart d'un filtre neuf : sinon le grand dt
                 # et la dérivée gonflée laissent passer un saut puis du bruit pendant ~1 s.
                 if pose_blender.lost_duration(timestamp) >= pose_blender.min_loss:
@@ -549,7 +568,7 @@ def main() -> None:
 
             # Aperçu caméra du panneau (~10 images/s, seulement s'il est affiché)
             frame_count += 1
-            if panel is not None and panel.preview_enabled and frame_count % 3 == 0:
+            if panel is not None and panel.preview_enabled and panel.is_visible and frame_count % 3 == 0:
                 panel.publish_preview(make_preview(
                     frame, face_data.detected, [face_data.left_iris_px, face_data.right_iris_px], blinking))
 
@@ -587,6 +606,7 @@ def main() -> None:
             if jitter:
                 diag_text += (f"\nAgitation (1 s, si immobile) : tête {jitter['head_deg']:.2f}°, "
                               f"regard {jitter['gaze_px']:.0f} px")
+            diag_text += f"\nReflets sur les iris : {glare_level * 100:.1f} %"
 
             def panel_status(calibrating: bool = False) -> dict:
                 return {
@@ -597,7 +617,8 @@ def main() -> None:
                     "profile_name": current_profile.name, "profiles": available_profiles,
                     "profile_version": profile_version, "profile_values": dict(profile_values),
                     "hotkey_hint": hotkey_hint, "calibrating": calibrating,
-                    "diag": diag_text,
+                    "diag": diag_text, "glare": glare_level, "glare_label": glare_label(glare_level),
+                    "calib_quality": calibration_mgr.quality_label, "calib_deg": calibration_mgr.quality_deg,
                 }
 
             if panel is not None:
@@ -607,6 +628,8 @@ def main() -> None:
             commands = [("action", a) for a in hotkeys.poll()]
             if panel is not None:
                 commands += panel.poll()
+            if tray is not None:
+                commands += [("action", a) for a in tray.poll()]
             key_actions = {
                 ord("r"): "recenter", ord("g"): "gaze", ord(" "): "pause", ord("c"): "calibrate",
                 ord("o"): "overlay", ord("p"): "next_profile", ord("s"): "save", ord("q"): "quit", 27: "quit",
@@ -665,6 +688,12 @@ def main() -> None:
                     names = list_profiles()
                     if names:
                         switch_profile(names[(current_prof_idx + 1) % len(names)])
+                elif action == "toggle_panel" and panel is not None:
+                    panel.toggle_visible()
+                elif action == "panel_hidden" and tray is not None and not panel_hidden_notified:
+                    panel_hidden_notified = True
+                    tray.notify("Eyetrack continue", "Le suivi continue en arrière-plan. Cliquez sur l'icône "
+                                "Eyetrack pour rouvrir le panneau ; clic droit pour quitter.")
                 elif action == "save":
                     save_profile(current_profile)
                     print(f"[profile] Configuration sauvegardée dans 'profiles/{current_profile.name}.json'.")
@@ -672,11 +701,22 @@ def main() -> None:
                 print("[main] Arrêt demandé par l'utilisateur.")
                 break
 
+            if tray is not None:
+                tray.paused, tray.gaze_enabled = sender.paused, gaze_enabled
+                tray.panel_visible = panel.is_visible if panel is not None else False
+                state = ("en pause (caméra au centre)" if sender.paused
+                         else ("suivi actif" if face_data.detected else "visage perdu"))
+                if state != tray_state:
+                    tray_state = state
+                    tray.set_tooltip(f"Eyetrack - {state}")
+
     except KeyboardInterrupt:
         print("\n[main] Interruption clavier (Ctrl+C).")
     finally:
         print("[main] Fermeture propre des flux et sockets...")
         hotkeys.stop()
+        if tray is not None:
+            tray.stop()
         if panel is not None:
             panel.stop()
         overlay.stop()

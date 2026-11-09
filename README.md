@@ -28,21 +28,48 @@ mémorisé dans `data/camera_mode.json` (supprimer ce fichier pour relancer la r
 
 Une fenêtre « Eyetrack - Panneau de contrôle » s'ouvre avec le tracker :
 
-- **État** : visage détecté / perdu / clignement, images par seconde, envois à OpenTrack et plus
-  long trou, regard actif ou coupé, calibration, pause ;
+- **État** : visage détecté / perdu / clignement, reflets sur les lunettes, images par seconde,
+  envois à OpenTrack et plus long trou, regard actif ou coupé, note de la calibration, pause ;
 - **Commandes** : recentrer, pause, regard on/off, calibrer, overlay, voir la caméra, quitter ;
 - **Caméra** (bouton « Voir la caméra », fermé par défaut) : aperçu de l'image avec les iris
   détectés (points jaunes), un cadre vert / orange / rouge (visage suivi / clignement / perdu),
   le temps de calcul et l'agitation. Utile pour régler le cadrage, la lumière et vérifier les
   reflets des lunettes ; en jeu, le laisser fermé (il ne coûte alors rien) ;
 - **Profil** : changer de profil et sauvegarder les réglages dans son fichier JSON ;
-- **Réglages en direct** : gains de la tête, lissage de la tête au repos, part du regard, zone
-  morte et lissage du regard, recalibration sur les clics. Les changements s'appliquent tout de
-  suite ; ils ne sont gardés que si l'on clique sur « Sauvegarder les réglages ».
+- **Réglages en direct** : les trois essentiels (amplification de la tête, part du regard,
+  lissage du regard) ; le reste dans « Réglages avancés » (amplification haut/bas, lissage de la
+  tête au repos, part du regard haut/bas, zone morte, recalibration sur les clics). Les
+  changements s'appliquent tout de suite ; ils ne sont gardés que si l'on clique sur
+  « Sauvegarder les réglages ».
 
-Fermer le panneau arrête le tracker. L'ancienne fenêtre « Moniteur » (vidéo agrandie et HUD
+**Zone de notification** : une icône Eyetrack s'affiche près de l'horloge. La croix du panneau
+le **réduit** (le suivi continue) ; un clic sur l'icône le rouvre ; clic droit : menu (recentrer,
+pause, regard, quitter). Pour arrêter le tracker : bouton « Quitter » ou menu de l'icône.
+
+L'ancienne fenêtre « Moniteur » (vidéo agrandie et HUD
 de diagnostic complet) ne s'ouvre plus que sur demande : `python main.py --moniteur`, ou sans
 panneau : `python main.py --no-panel`.
+
+### Calibration guidée
+
+Bouton « Calibrer le regard » (ou `C` dans le Moniteur) : 9 cibles, à 10 % des bords de l'écran
+pour que le regard soit appris jusque dans les coins. Fixer chaque cible en bougeant doucement la
+tête. Si un reflet couvre les iris, un message rouge s'affiche : déplacer la lampe ou incliner un
+peu l'écran.
+
+À la fin, un écran de résultats montre, pour chaque cible, où le regard a été estimé (croix) et
+l'erreur en degrés. Chaque point est prédit **sans lui** (validation croisée) : la note ne flatte
+pas la calibration. Note globale : **bonne** jusqu'à 5,5°, **moyenne** jusqu'à 7°, **à refaire**
+au-delà (seuils calés sur de vraies calibrations avec lunettes : 3,9° et 4,8° ; un point raté donne
+18 à 38°). Les coins sont naturellement un peu moins bons que le centre.
+
+| Touche | Action |
+|---|---|
+| `Entrée` | Valider la calibration |
+| `R` | Refaire seulement les points en rouge ou pris avec un reflet (sinon le moins bon) |
+| `Échap` | Annuler : l'ancienne calibration est conservée |
+
+La note est enregistrée avec la calibration et affichée dans le panneau.
 
 ### Raccourcis en jeu (globaux)
 
@@ -119,12 +146,14 @@ filters.py          filtre One Euro (+ médian), maintien et fondu en cas de per
 geometry.py         géométrie de l'écran (mm, pixels, angles)
 output.py           envoi UDP OpenTrack (120 Hz, prédiction, pause), courbe du regard, HUD
 overlay.py          overlay transparent click-through (Windows)
+tray.py             icône de la zone de notification (API Windows, sans dépendance)
 panel.py            panneau de contrôle (état, commandes, réglages en direct, aperçu caméra)
 hotkeys.py          raccourcis clavier globaux (Windows), actifs en jeu
 profile.py          profils JSON par jeu
 
 profiles/           profils de jeux (versionnés)
-tools/              diagnostics : diag_regard.py, diag_stabilite.py, validate.py
+tools/              diagnostics : diag_regard.py, diag_stabilite.py, validate.py ; make_icon.py
+assets/             icône de l'application (eyetrack.ico)
 tests/              tests automatiques (sens des axes, envoi OpenTrack, raccourcis, panneau)
 docs/               état de l'art de l'eye tracking webcam
 models/             modèles téléchargés (hors git)
@@ -164,9 +193,10 @@ raccourcis par défaut.
 
 Ensuite :
 
-- **Phase 2 — confort** : panneau de contrôle et aperçu caméra intégré faits. Reste :
-  calibration guidée (note de qualité, refaire un point raté, cibles plus près des bords,
-  alerte reflets sur les lunettes), icône dans la zone de notification.
+- **Phase 2 — confort** : faite (panneau de contrôle, aperçu caméra, calibration guidée, alerte
+  reflets, icône de la zone de notification). À confirmer avec la vraie caméra et les lunettes :
+  les seuils de reflet (« léger » dès 5 % de l'iris, « gênant » dès 15 %, valeur affichée dans
+  l'aperçu caméra), choisis sans mesure réelle.
 - **Phase 3 — paquet cadeau** : `.exe` installable (PyInstaller + installateur), assistant
   de premier lancement (caméra, écran, distance, calibration), profil OpenTrack fourni
   (entrée UDP, Accela, axes réglés). Rappel : le modèle de regard est non commercial.

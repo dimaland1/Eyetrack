@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parent
 MODELS_DIR = ROOT / "models"
 DATA_DIR = ROOT / "data"
 PROFILES_DIR = ROOT / "profiles"
+ASSETS_DIR = ROOT / "assets"  # icône de l'application (versionnée)
+ICON_FILE = ASSETS_DIR / "eyetrack.ico"
 
 
 def model_path(filename: str) -> str:

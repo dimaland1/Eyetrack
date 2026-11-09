@@ -12,7 +12,7 @@ sys.path.insert(0, ROOT)
 import numpy as np  # noqa: E402
 
 import profile as profiles  # noqa: E402
-from panel import CHECKS, GAZE_SLIDERS, HEAD_SLIDERS, PANEL_FIELDS, PREVIEW_WIDTH, make_preview  # noqa: E402
+from panel import ADVANCED_SLIDERS, CHECKS, ESSENTIAL_SLIDERS, PANEL_FIELDS, PREVIEW_WIDTH, make_preview  # noqa: E402
 
 
 class TestPanel(unittest.TestCase):
@@ -37,7 +37,7 @@ class TestPanel(unittest.TestCase):
         # Sinon le curseur tronquerait la valeur du profil sans prévenir
         for name in profiles.list_profiles():
             p = profiles.load_profile(name)
-            for field, _label, lo, hi, _step in HEAD_SLIDERS + GAZE_SLIDERS:
+            for field, _label, lo, hi, _step in ESSENTIAL_SLIDERS + ADVANCED_SLIDERS:
                 v = getattr(p, field)
                 self.assertTrue(lo <= v <= hi, f"{name}.{field} = {v} hors du curseur [{lo}, {hi}]")
             for field, _label in CHECKS:

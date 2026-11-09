@@ -18,14 +18,16 @@ echo   Diagnostics
 echo     5. Diagnostic du regard         (tete immobile, yeux seulement)
 echo     6. Diagnostic de stabilite      (10 s en fixant le centre)
 echo     7. Validation de precision      (9 cibles)
+echo     9. Tests automatiques           (sens des axes, envoi OpenTrack)
 echo.
 echo   Installation
 echo     8. Installer OpenTrack          (winget)
 echo.
 echo     Q. Quitter
 echo.
-choice /c 12345678Q /n /m "Votre choix : "
-if errorlevel 9 goto :eof
+choice /c 123456789Q /n /m "Votre choix : "
+if errorlevel 10 goto :eof
+if errorlevel 9 goto tests
 if errorlevel 8 goto install
 if errorlevel 7 goto validate
 if errorlevel 6 goto stab
@@ -68,6 +70,10 @@ goto fin
 
 :validate
 python tools\validate.py
+goto fin
+
+:tests
+python -m unittest discover -s tests -v
 goto fin
 
 :install

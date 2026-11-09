@@ -27,6 +27,7 @@ from calibration import CalibrationManager
 from filters import OneEuroFilter, LossBlender, BlinkDetector
 from output import OpenTrackSender, Visualizer, OutputConfig
 from overlay import GazeOverlay
+from hotkeys import GlobalHotkeys, format_hotkey
 from paths import data_path
 from profile import (
     Profile,
@@ -110,6 +111,11 @@ def parse_arguments() -> tuple[argparse.Namespace, Profile]:
     parser.add_argument("--gaze-smoothing", type=float, default=active_profile.gaze_smoothing_s, help="Lissage de la part regard de la caméra (s)")
     parser.add_argument("--head-yaw-gain", type=float, default=active_profile.head_yaw_gain, help="Gain de rotation tête Yaw (1 = 1:1)")
     parser.add_argument("--head-pitch-gain", type=float, default=active_profile.head_pitch_gain, help="Gain de rotation tête Pitch (1 = 1:1)")
+
+    # Envoi à OpenTrack (indépendant du framerate de la webcam)
+    parser.add_argument("--send-rate", type=float, default=active_profile.send_rate_hz, help="Fréquence d'envoi à OpenTrack en Hz (0 = une fois par image)")
+    parser.add_argument("--prediction", type=float, default=active_profile.prediction_s, help="Avance de la prédiction de la pose (s, 0 = aucune)")
+    parser.add_argument("--output-smoothing", type=float, default=active_profile.output_smoothing_s, help="Lissage court de la sortie (s)")
 
     # Fonctionnalités avancées (Étapes 5 & 6)
     parser.add_argument("--overlay", action="store_true", default=active_profile.overlay_enabled, help="Active l'overlay transparent")
@@ -241,9 +247,27 @@ def main() -> None:
         gaze_smoothing_s=args.gaze_smoothing,
         head_yaw_gain=args.head_yaw_gain,
         head_pitch_gain=args.head_pitch_gain,
+        send_rate_hz=args.send_rate,
+        max_prediction_s=args.prediction,
+        output_smoothing_s=args.output_smoothing,
     )
     sender = OpenTrackSender(config=out_cfg)
+    sender.start()
     visualizer = Visualizer()
+
+    # Raccourcis globaux (actifs même quand le jeu a le focus)
+    hotkey_labels = {"recenter": "Recentrer", "gaze": "Regard on/off", "pause": "Pause (caméra au centre)"}
+    hotkey_bindings = {
+        "recenter": current_profile.hotkey_recenter,
+        "gaze": current_profile.hotkey_gaze,
+        "pause": current_profile.hotkey_pause,
+    }
+    hotkeys = GlobalHotkeys(hotkey_bindings)
+    hotkey_status = hotkeys.start()
+    short_labels = {"recenter": "recentrer", "gaze": "regard", "pause": "pause"}
+    active_hotkeys = [f"{format_hotkey(c)} {short_labels[a]}" for a, c in hotkey_bindings.items()
+                      if c and hotkey_status.get(a)]
+    hotkey_hint = ("En jeu : " + " | ".join(active_hotkeys)) if active_hotkeys else ""
 
     # 8. Overlay transparent click-through (Étape 6)
     overlay = GazeOverlay(width=screen_w, height=screen_h)
@@ -273,14 +297,39 @@ def main() -> None:
     class POINT(ctypes.Structure):
         _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
-    print("\n[INFO] Tracker démarré. Raccourcis clavier :")
+    class CURSORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_uint), ("flags", ctypes.c_uint),
+                    ("hCursor", ctypes.c_void_p), ("ptScreenPos", POINT)]
+
+    def cursor_visible() -> bool:
+        """Le curseur de la souris est-il affiché ? Les jeux le cachent quand ils capturent la
+        souris : un clic n'y désigne alors pas l'endroit regardé (recalibration à éviter)."""
+        info = CURSORINFO()
+        info.cbSize = ctypes.sizeof(CURSORINFO)
+        if not ctypes.windll.user32.GetCursorInfo(ctypes.byref(info)):
+            return False
+        return bool(info.flags & 0x1) and bool(info.hCursor)  # CURSOR_SHOWING
+
+    print("\n[INFO] Tracker démarré. Raccourcis clavier (fenêtre Moniteur) :")
     print("  [C] : Lancer la calibration affine (5 ou 9 points)")
     print("  [G] : Activer / Désactiver la contribution du regard à la caméra")
     print("  [O] : Activer / Désactiver l'overlay transparent in-game")
     print("  [P] : Basculer vers le profil suivant (default, ets2, flight_sim, racing)")
     print("  [S] : Sauvegarder la configuration dans le profil JSON actif")
     print("  [R] : Recentrer la pose et le regard (zéro)")
-    print("  [Q] ou ESC : Quitter\n")
+    print("  [Espace] : Pause (la caméra revient au centre et y reste)")
+    print("  [Q] ou ESC : Quitter")
+    print("Raccourcis globaux (marchent aussi en jeu) :")
+    for action, combo in hotkey_bindings.items():
+        if not combo:
+            continue
+        if hotkey_status.get(action):
+            print(f"  [{format_hotkey(combo)}] : {hotkey_labels[action]}")
+        else:
+            print(f"  [{format_hotkey(combo)}] : {hotkey_labels[action]} -> INDISPONIBLE "
+                  f"({hotkeys.errors.get(action, 'erreur inconnue')}) ; changer « hotkey_{action} » dans le profil")
+    print(f"Envoi OpenTrack : {args.send_rate:.0f} Hz" if args.send_rate > 0 else "Envoi OpenTrack : une fois par image")
+    print(f"Recalibration au clic : {'active (curseur visible seulement)' if not args.no_recalib else 'désactivée'}\n")
 
     step_latencies: dict[str, float] = {}
     # Mesure de l'agitation sur ~1 s glissante (écart-type des sorties filtrées)
@@ -374,16 +423,19 @@ def main() -> None:
 
             t_filter = (time.perf_counter() - t0) * 1000.0
 
-            # 6. Étape Sortie (Envoi UDP OpenTrack)
-            # Envoi continu, y compris pendant une perte (valeur maintenue) : le flux reste
-            # régulier et la reprise se fait en fondu au lieu d'un saut.
+            # 6. Étape Sortie (OpenTrack UDP)
+            # La pose filtrée est transmise au thread d'envoi, qui envoie à 120 Hz en prédisant
+            # entre deux images. Pendant une perte, la valeur maintenue est transmise sans
+            # prédiction : le flux reste régulier et la reprise se fait en fondu.
             if face_data.detected or pose_blender.held is not None:
-                sender.send(
+                sender.update(
                     pose_xyz=filtered_xyz,
                     pose_ypr=filtered_ypr,
                     gaze_px=current_gaze_px,
                     screen_config=screen_config,
                     gaze_enabled=gaze_enabled,
+                    timestamp=timestamp,
+                    tracking=face_data.detected,
                 )
 
             # Mesure du temps total par boucle
@@ -407,10 +459,12 @@ def main() -> None:
                 }
 
             # Recalibration implicite RLS sur les clics de souris (Étape 5)
+            # Seulement si le curseur est visible : en jeu, la souris est capturée (curseur
+            # caché, souvent bloqué au centre) et le clic ne désigne pas l'endroit regardé.
             if enable_recalib and ctypes and face_data.detected and calibration_mgr.is_calibrated and not blinking:
                 try:
                     is_mouse_down = (ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000) != 0
-                    if is_mouse_down and not prev_mouse_down:
+                    if is_mouse_down and not prev_mouse_down and cursor_visible():
                         pt = POINT()
                         ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
                         click_x, click_y = float(pt.x), float(pt.y)
@@ -451,7 +505,34 @@ def main() -> None:
                 rls_count=calibration_mgr.rls_update_count,
                 profile_name=current_profile.name,
                 jitter=jitter,
+                paused=sender.paused,
+                send_rate_hz=sender.measured_rate_hz,
+                send_gap_ms=sender.max_gap_ms,
+                hotkey_hint=hotkey_hint,
             )
+
+            # Commandes : touches du Moniteur et raccourcis globaux (en jeu)
+            actions = hotkeys.poll()
+            if key == ord("r"):
+                actions.append("recenter")
+            elif key == ord("g"):
+                actions.append("gaze")
+            elif key == ord(" "):
+                actions.append("pause")
+            for action in actions:
+                if action == "recenter":
+                    sender.recenter(
+                        current_pose_xyz=filtered_xyz,
+                        current_pose_ypr=filtered_ypr,
+                        current_gaze_px=current_gaze_px,
+                        screen_config=screen_config,
+                    )
+                elif action == "gaze":
+                    gaze_enabled = not gaze_enabled
+                    print(f"[main] Contribution du regard à la caméra : {'ACTIVÉ' if gaze_enabled else 'DÉSACTIVÉ'}")
+                elif action == "pause":
+                    paused = sender.toggle_pause()
+                    print(f"[main] {'PAUSE : caméra ramenée au centre' if paused else 'Reprise du suivi'}")
 
             if key == ord("q") or key == 27:  # 'q' ou ESC
                 print("[main] Arrêt demandé par l'utilisateur.")
@@ -469,10 +550,6 @@ def main() -> None:
                     print(f"[main] Calibration sauvegardée dans {calib_file}")
                     pose_filter.reset()
                     gaze_filter.reset()
-            elif key == ord("g"):  # Toggle regard on/off
-                gaze_enabled = not gaze_enabled
-                state_str = "ACTIVÉ" if gaze_enabled else "DÉSACTIVÉ"
-                print(f"[main] Contribution du regard à la caméra : {state_str}")
             elif key == ord("o"):  # Toggle overlay transparent on/off (Étape 6)
                 vis = overlay.toggle()
                 print(f"[main] Overlay transparent in-game : {'ACTIVÉ' if vis else 'DÉSACTIVÉ'}")
@@ -490,26 +567,25 @@ def main() -> None:
                     sender.config.gaze_smoothing_s = current_profile.gaze_smoothing_s
                     sender.config.head_yaw_gain = current_profile.head_yaw_gain
                     sender.config.head_pitch_gain = current_profile.head_pitch_gain
+                    sender.config.max_prediction_s = current_profile.prediction_s
+                    sender.config.output_smoothing_s = current_profile.output_smoothing_s
+                    enable_recalib = current_profile.recalib_on_click
                     pose_filter.set_params(min_cutoff=current_profile.pose_min_cutoff, beta=current_profile.pose_beta)
                     gaze_filter.set_params(min_cutoff=current_profile.gaze_min_cutoff, beta=current_profile.gaze_beta,
                                            median_window=current_profile.gaze_median)
                     print(f"\n[profile] Bascule vers [{current_profile.name.upper()}] : {current_profile.description}")
                     print(f"          -> Yaw gain: {current_profile.gaze_yaw_gain:.2f} | Pitch gain: {current_profile.gaze_pitch_gain:.2f} | Deadzone: {current_profile.gaze_deadzone:.2f} | Exp: {current_profile.gaze_curve_exp:.2f}")
+                    print(f"          -> Recalibration au clic : {'active' if enable_recalib else 'désactivée'} "
+                          f"(raccourcis globaux et fréquence d'envoi : ceux du lancement)")
             elif key == ord("s"):  # Sauvegarder la configuration dans le profil
                 save_profile(current_profile)
                 print(f"[profile] Configuration sauvegardée dans 'profiles/{current_profile.name}.json'.")
-            elif key == ord("r"):  # Recentrer
-                sender.recenter(
-                    current_pose_xyz=filtered_xyz,
-                    current_pose_ypr=filtered_ypr,
-                    current_gaze_px=current_gaze_px,
-                    screen_config=screen_config,
-                )
 
     except KeyboardInterrupt:
         print("\n[main] Interruption clavier (Ctrl+C).")
     finally:
         print("[main] Fermeture propre des flux et sockets...")
+        hotkeys.stop()
         overlay.stop()
         capture.release()
         sender.close()

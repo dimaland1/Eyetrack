@@ -69,6 +69,26 @@ class FaceData:
     eye_openness: float = 0.0
 
 
+def pose_from_matrix(mat: np.ndarray) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """Matrice de transformation faciale MediaPipe (4x4) -> (x, y, z en cm), (yaw, pitch, roll en °).
+
+    Repère MediaPipe : x vers la droite de l'image, y vers le haut, z vers la caméra.
+    Angles d'Euler dans l'ordre d'OpenTrack : yaw (autour de Y), puis pitch (autour de l'axe X
+    de la tête), puis roll (autour de l'axe avant de la tête), soit R = Ry(yaw)·Rx(pitch)·Rz(roll).
+    L'ancien RQDecomp3x3 (ordre X-Y-Z) mélangeait les axes dès que la tête était tournée : tête
+    tournée de 40° puis penchée de 15° donnait un faux pitch de 12° (cf. tests/test_axes.py).
+    """
+    mat = np.asarray(mat, dtype=np.float64)
+    pose_xyz = (float(mat[0, 3]), float(mat[1, 3]), float(mat[2, 3]))
+    # Rotation pure (au cas où la matrice contient une échelle)
+    U, _, Vt = np.linalg.svd(mat[:3, :3])
+    R = U @ Vt
+    yaw = float(np.degrees(np.arctan2(R[0, 2], R[2, 2])))
+    pitch = float(np.degrees(np.arcsin(np.clip(-R[1, 2], -1.0, 1.0))))
+    roll = float(np.degrees(np.arctan2(R[1, 0], R[1, 1])))
+    return pose_xyz, (yaw, pitch, roll)
+
+
 class FaceDetector:
     """Détecteur de visage et de pose basé sur MediaPipe FaceLandmarker."""
 
@@ -146,25 +166,7 @@ class FaceDetector:
         if result.facial_transformation_matrixes and len(result.facial_transformation_matrixes) > 0:
             mat = np.array(result.facial_transformation_matrixes[0], dtype=np.float64)
             transform_mat = mat
-
-            # Translation en cm (colonne 3)
-            tx = float(mat[0, 3])
-            ty = float(mat[1, 3])
-            tz = float(mat[2, 3])
-            pose_xyz = (tx, ty, tz)
-
-            # Angles d'Euler dans l'ordre d'OpenTrack : yaw (autour de Y), puis pitch (autour de
-            # l'axe X de la tête), puis roll (autour de l'axe avant de la tête), soit
-            # R = Ry(yaw) · Rx(pitch) · Rz(roll) dans le repère MediaPipe (x droite, y haut).
-            # L'ancien RQDecomp3x3 (ordre X-Y-Z) mélangeait les axes dès que la tête était
-            # tournée : tête tournée de 40° puis penchée de 15° donnait un faux pitch de 12°.
-            # On ramène d'abord la matrice à une rotation pure (au cas où elle contient une échelle).
-            U, _, Vt = np.linalg.svd(mat[:3, :3])
-            R = U @ Vt
-            yaw = float(np.degrees(np.arctan2(R[0, 2], R[2, 2])))
-            pitch = float(np.degrees(np.arcsin(np.clip(-R[1, 2], -1.0, 1.0))))
-            roll = float(np.degrees(np.arctan2(R[1, 0], R[1, 1])))
-            pose_ypr = (yaw, pitch, roll)
+            pose_xyz, pose_ypr = pose_from_matrix(mat)
 
         # Extraction des iris et calcul du diamètre métrique
         left_iris_center = (float(lm_px[LEFT_IMAGE_EYE["iris_center"], 0]), float(lm_px[LEFT_IMAGE_EYE["iris_center"], 1]))

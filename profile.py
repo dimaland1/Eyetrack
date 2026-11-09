@@ -42,6 +42,11 @@ class Profile:
     head_yaw_gain: float = 1.5
     head_pitch_gain: float = 1.2
 
+    # Envoi à OpenTrack (indépendant des 30 images/s de la webcam)
+    send_rate_hz: float = 120.0       # 0 = un envoi par image (ancien comportement)
+    output_smoothing_s: float = 0.015  # transforme les 30 sauts/s en mouvement continu
+    prediction_s: float = 0.010        # avance de la prédiction (rattrape le lissage)
+
     # Lissage One Euro : réglages séparés car les unités diffèrent
     # Pose tête (degrés et cm)
     pose_min_cutoff: float = 1.0    # Fréquence min en Hz (stabilité au repos)
@@ -66,8 +71,19 @@ class Profile:
 
     # Options d'interface
     overlay_enabled: bool = False   # Overlay transparent click-through in-game
-    recalib_on_click: bool = True   # Recalibration implicite RLS aux clics
+    # Recalibration implicite RLS aux clics. Désactivée dans les profils de jeu : la souris y
+    # est souvent bloquée au centre et chaque clic apprendrait une fausse cible. Dans tous les
+    # cas, les clics faits pendant que le curseur est caché (jeu) sont ignorés.
+    recalib_on_click: bool = True
     calibration_file: str = ""      # Chemin du fichier .npz associé (auto si vide)
+
+    # Raccourcis globaux, actifs même quand le jeu a le focus ("" = désactivé).
+    # Éviter les lettres : beaucoup de jeux voient quand même la touche (BeamNG : R
+    # réinitialise le véhicule). Si Ctrl/Maj passent les vitesses (ETS2, boîte au clavier),
+    # prendre une touche seule que le jeu n'utilise pas, ex. "pause" ou "scrolllock".
+    hotkey_recenter: str = "ctrl+shift+f9"
+    hotkey_gaze: str = "ctrl+shift+f10"
+    hotkey_pause: str = "ctrl+shift+f11"
 
     def to_dict(self) -> dict:
         """Sérialise le profil en dictionnaire JSON-compatible."""
@@ -152,6 +168,7 @@ def create_builtin_profile(name: str) -> Profile:
     if "ets2" in lower or "truck" in lower:
         return Profile(
             name="ets2",
+            recalib_on_click=False,
             description="Euro Truck Simulator 2 / ATS : grand angle pour rétroviseurs, pitch stable",
             gaze_mode="net",
             gaze_yaw_gain=0.5,
@@ -169,6 +186,7 @@ def create_builtin_profile(name: str) -> Profile:
     elif "flight" in lower or "msfs" in lower or "dcs" in lower:
         return Profile(
             name="flight_sim",
+            recalib_on_click=False,
             description="MSFS / DCS / X-Plane : zone morte réduite pour scanner les cadrans du cockpit",
             gaze_mode="net",
             gaze_yaw_gain=0.55,
@@ -186,6 +204,7 @@ def create_builtin_profile(name: str) -> Profile:
     elif "race" in lower or "racing" in lower or "assetto" in lower or "iracing" in lower:
         return Profile(
             name="racing",
+            recalib_on_click=False,
             description="Assetto Corsa / iRacing : focalisation sur le point de corde sans dérive verticale",
             gaze_mode="net",
             gaze_yaw_gain=0.75,

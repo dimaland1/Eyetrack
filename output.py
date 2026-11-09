@@ -12,6 +12,10 @@ from dataclasses import dataclass
 import socket
 import struct
 import math
+import ctypes
+import platform
+import sys
+import threading
 import time
 import cv2
 import numpy as np
@@ -44,6 +48,21 @@ class OutputConfig:
     # Lissage supplémentaire de la part « regard » de la caméra (constante de temps, s) :
     # le regard webcam est bruité (~3°) ; sans cela la caméra « danse » quand on fixe un coin.
     gaze_smoothing_s: float = 0.25
+    # Envoi à OpenTrack indépendant de la webcam (30 images/s) : à 120 Hz avec prédiction, la
+    # caméra du jeu avance par petits pas réguliers au lieu de 30 sauts par seconde.
+    # 0 = un envoi par image webcam (ancien comportement).
+    send_rate_hz: float = 120.0
+    # Lissage très court de la sortie (s) : transforme les 30 sauts par seconde en mouvement
+    # continu. Coûte ~10 ms de retard, que la prédiction ci-dessous rattrape.
+    output_smoothing_s: float = 0.015
+    # Avance de la prédiction (s) ; 0 = pas de prédiction. Mesuré en simulation (tête bruitée,
+    # One Euro, rotation rapide de 40°) : 10 ms garde le retard d'avant (~50 ms) avec 3 fois
+    # moins d'à-coups ; au-delà, la caméra dépasse sa cible à l'arrêt (7° pour 50 ms).
+    max_prediction_s: float = 0.010
+    # Durée du fondu de la pause (retour au centre / reprise), en secondes
+    pause_fade_s: float = 0.4
+    # Recentrage en douceur (constante de temps, s : ~95 % du chemin en 3 fois cette valeur)
+    recenter_smoothing_s: float = 0.12
 
 
 def soft_response_curve(val: float, deadzone: float, exp: float) -> float:
@@ -64,8 +83,44 @@ def soft_response_curve(val: float, deadzone: float, exp: float) -> float:
     return math.copysign(mag, val)
 
 
+def _ramp(x: float, lo: float, hi: float) -> float:
+    """0 sous lo, 1 au-dessus de hi, transition douce (smoothstep) entre les deux."""
+    if hi <= lo:
+        return 1.0 if x >= hi else 0.0
+    u = min(max((x - lo) / (hi - lo), 0.0), 1.0)
+    return u * u * (3.0 - 2.0 * u)
+
+
+# Vitesses au-delà desquelles une estimation est jugée aberrante (bornage de la prédiction)
+MAX_ANGULAR_SPEED = 400.0  # °/s
+MAX_LINEAR_SPEED = 150.0   # cm/s
+# La prédiction n'agit que si la tête bouge vraiment : au repos, la vitesse estimée n'est que
+# du bruit et l'extrapoler ajouterait du tremblement. Seuils (début, pleine prédiction) :
+PREDICT_ANGULAR_RAMP = (4.0, 20.0)  # °/s
+PREDICT_LINEAR_RAMP = (1.5, 6.0)    # cm/s
+
+
+@dataclass
+class _Sample:
+    """Dernière pose filtrée reçue de la boucle principale."""
+
+    t: float                      # horodatage de l'image (time.perf_counter)
+    pose: np.ndarray              # x, y, z (cm), yaw, pitch, roll (°) au format MediaPipe
+    vel: np.ndarray               # vitesse estimée (par seconde)
+    gaze_px: tuple[float, float]
+    gaze_enabled: bool
+    tracking: bool                # False = visage perdu, valeur maintenue
+    screen_config: ScreenConfig
+
+
 class OpenTrackSender:
-    """Émetteur UDP vers OpenTrack."""
+    """Émetteur UDP vers OpenTrack.
+
+    Deux modes :
+    - `start()` puis `update()` à chaque image : un thread envoie à `send_rate_hz` (120 Hz)
+      en prédisant la pose entre deux images de la webcam ;
+    - sans `start()` et avec send_rate_hz = 0 : un paquet par appel à `update()` / `send()`.
+    """
 
     def __init__(self, config: OutputConfig | None = None) -> None:
         self.config = config or OutputConfig()
@@ -77,8 +132,31 @@ class OpenTrackSender:
         self.is_recentered = False
         # Décalage caméra dû au regard, lissé (yaw, pitch en degrés)
         self._gaze_offset = np.zeros(2, dtype=np.float64)
-        self._last_send_t: float | None = None
+        self._last_tick_t: float | None = None
+        # Pose de sortie lissée (format MediaPipe, avant conversion)
+        self._out_pose: np.ndarray | None = None
+        # Pause : la caméra revient en douceur au centre et y reste
+        self.paused = False
+        self._pause_w = 1.0  # 1 = suivi normal, 0 = caméra au centre
+        # Dernière pose reçue et thread d'envoi
+        self._sample: _Sample | None = None
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._running = False
+        self._fine_timer = False  # horloge Windows à 1 ms demandée (timeBeginPeriod)
+        self.last_values: tuple[float, ...] | None = None  # dernier paquet envoyé (diagnostic)
+        # Fréquence d'envoi mesurée (affichée dans le HUD)
+        self.measured_rate_hz = 0.0
+        self.max_gap_ms = 0.0  # plus long intervalle entre deux paquets sur la dernière seconde
+        self._rate_count = 0
+        self._rate_t0 = time.perf_counter()
+        self._last_emit_t: float | None = None
+        self._gap_max = 0.0
+        # Référence de recentrage réellement appliquée : rejoint la nouvelle référence en fondu
+        # (recentrer pendant que la tête est tournée ne fait plus sauter la caméra d'un coup)
+        self._ref_applied: np.ndarray | None = None
 
+    # ------------------------------------------------------------------ commandes
     def recenter(
         self,
         current_pose_xyz: tuple[float, float, float],
@@ -94,6 +172,48 @@ class OpenTrackSender:
         self.is_recentered = True
         print("[output] Pose et regard recentrés (zéro défini).")
 
+    def set_paused(self, paused: bool) -> None:
+        """Pause : la caméra revient en douceur au centre et y reste jusqu'à la reprise."""
+        self.paused = bool(paused)
+
+    def toggle_pause(self) -> bool:
+        self.set_paused(not self.paused)
+        return self.paused
+
+    # ------------------------------------------------------------------ entrées
+    def update(
+        self,
+        pose_xyz: tuple[float, float, float],
+        pose_ypr: tuple[float, float, float],
+        gaze_px: tuple[float, float],
+        screen_config: ScreenConfig,
+        gaze_enabled: bool = True,
+        timestamp: float | None = None,
+        tracking: bool = True,
+    ) -> None:
+        """Transmet la dernière pose filtrée (appelé à chaque image de la webcam).
+
+        Avec le thread démarré, l'envoi se fait à `send_rate_hz` ; sinon (send_rate_hz = 0),
+        un paquet est envoyé tout de suite.
+        """
+        t = time.perf_counter() if timestamp is None else float(timestamp)
+        pose = np.array([*pose_xyz, *pose_ypr], dtype=np.float64)
+        with self._lock:
+            prev = self._sample
+            vel = np.zeros(6, dtype=np.float64)
+            if tracking and prev is not None and prev.tracking:
+                dt = t - prev.t
+                if 1e-3 < dt < 0.2:
+                    # Vitesse entre deux images, légèrement lissée (la pose est déjà filtrée)
+                    vel = prev.vel + 0.6 * ((pose - prev.pose) / dt - prev.vel)
+                    vel[:3] = np.clip(vel[:3], -MAX_LINEAR_SPEED, MAX_LINEAR_SPEED)
+                    vel[3:] = np.clip(vel[3:], -MAX_ANGULAR_SPEED, MAX_ANGULAR_SPEED)
+            self._sample = _Sample(t=t, pose=pose, vel=vel, gaze_px=(float(gaze_px[0]), float(gaze_px[1])),
+                                   gaze_enabled=bool(gaze_enabled), tracking=bool(tracking),
+                                   screen_config=screen_config)
+        if not self._running and self.config.send_rate_hz <= 0:
+            self._tick(time.perf_counter())
+
     def send(
         self,
         pose_xyz: tuple[float, float, float],
@@ -102,21 +222,51 @@ class OpenTrackSender:
         screen_config: ScreenConfig,
         gaze_enabled: bool = True,
     ) -> None:
-        """Calcule la pose finale et transmet les 6 doubles little-endian via UDP.
+        """Calcule la pose finale et envoie immédiatement un paquet."""
+        now = time.perf_counter()
+        self.update(pose_xyz, pose_ypr, gaze_px, screen_config, gaze_enabled, timestamp=now)
+        if self._running or self.config.send_rate_hz > 0:
+            self._tick(now)
 
-        Format OpenTrack : [x, y, z (cm), yaw, pitch, roll (deg)].
-        """
-        raw_xyz = np.array(pose_xyz, dtype=np.float64)
-        raw_ypr = np.array(pose_ypr, dtype=np.float64)
+    # ------------------------------------------------------------------ calcul
+    def predicted_pose(self, now: float) -> np.ndarray | None:
+        """Pose (format MediaPipe) extrapolée à l'instant `now` à partir de la dernière image."""
+        with self._lock:
+            s = self._sample
+        if s is None:
+            return None
+        lead = min(max(now - s.t, 0.0), max(self.config.max_prediction_s, 0.0))
+        if lead <= 0.0 or not s.tracking:
+            return s.pose.copy()
+        v = s.vel.copy()
+        v[3:] *= _ramp(float(np.linalg.norm(v[3:])), *PREDICT_ANGULAR_RAMP)
+        v[:3] *= _ramp(float(np.linalg.norm(v[:3])), *PREDICT_LINEAR_RAMP)
+        return s.pose + v * lead
 
-        # Application du recentrage
-        rel_xyz = raw_xyz - self.ref_pose_xyz
-        rel_ypr = raw_ypr - self.ref_pose_ypr
+    def _compose(
+        self,
+        pose: np.ndarray,
+        gaze_px: tuple[float, float],
+        screen_config: ScreenConfig,
+        gaze_enabled: bool,
+        dt: float,
+    ) -> tuple[float, float, float, float, float, float]:
+        """Pose MediaPipe -> 6 valeurs OpenTrack [x, y, z (cm), yaw, pitch, roll (°)]."""
+        # Application du recentrage (en fondu ; immédiat avant le premier paquet)
+        ref = np.concatenate([self.ref_pose_xyz, self.ref_pose_ypr])
+        if self._ref_applied is None:
+            self._ref_applied = ref.copy()
+        elif dt > 0:
+            a_ref = 1.0 - math.exp(-dt / max(self.config.recenter_smoothing_s, 1e-3))
+            self._ref_applied += a_ref * (ref - self._ref_applied)
+        rel_xyz = pose[:3] - self._ref_applied[:3]
+        rel_ypr = pose[3:] - self._ref_applied[3:]
 
         # Conversion des conventions MediaPipe -> OpenTrack, constatées en jeu (BeamNG, ETS2) :
         # - X : se pencher à droite faisait glisser la caméra à gauche -> signe inversé.
         # - Z : MediaPipe augmente quand on s'approche de l'écran, OpenTrack l'interprète comme
         #   un recul (avancer le visage faisait reculer la caméra) -> signe inversé.
+        # Ces sens sont verrouillés par tests/test_axes.py.
         x = -rel_xyz[0]
         y = rel_xyz[1]
         z = -rel_xyz[2]
@@ -147,9 +297,6 @@ class OpenTrackSender:
 
         # Contribution du regard à l'orientation de caméra (cible lissée dans le temps ;
         # regard coupé = retour en douceur vers 0, sans à-coup)
-        now = time.perf_counter()
-        dt = 0.0 if self._last_send_t is None else min(max(now - self._last_send_t, 0.0), 0.2)
-        self._last_send_t = now
         target = np.zeros(2, dtype=np.float64)
         if gaze_enabled:
             cur_nx, cur_ny = screen_config.px_to_norm(gaze_px[0], gaze_px[1])
@@ -174,15 +321,109 @@ class OpenTrackSender:
         yaw += self._gaze_offset[0]
         pitch += self._gaze_offset[1]
 
-        # Encodage binaire OpenTrack UDP : 6 doubles (6 * 8 = 48 octets little-endian)
-        payload = struct.pack("<6d", float(x), float(y), float(z), float(yaw), float(pitch), float(roll))
+        # Pause : fondu vers le centre (0) puis maintien ; reprise en fondu également
+        goal = 0.0 if self.paused else 1.0
+        step = dt / max(self.config.pause_fade_s, 1e-3)
+        if goal > self._pause_w:
+            self._pause_w = min(self._pause_w + step, goal)
+        else:
+            self._pause_w = max(self._pause_w - step, goal)
+        w = self._pause_w * self._pause_w * (3.0 - 2.0 * self._pause_w)
+
+        return (float(x * w), float(y * w), float(z * w), float(yaw * w), float(pitch * w), float(roll * w))
+
+    def _tick(self, now: float) -> tuple[float, ...] | None:
+        """Calcule et envoie un paquet pour l'instant `now` (appelé par le thread ou send())."""
+        target = self.predicted_pose(now)
+        if target is None:
+            return None
+        with self._lock:
+            s = self._sample
+        dt = 0.0 if self._last_tick_t is None else min(max(now - self._last_tick_t, 0.0), 0.2)
+        self._last_tick_t = now
+
+        # Lissage très court de la pose de sortie (arrondit les corrections de la prédiction)
+        tau = self.config.output_smoothing_s
+        if self._out_pose is None or tau <= 0.0 or dt <= 0.0:
+            self._out_pose = target.copy()
+        else:
+            self._out_pose = self._out_pose + (1.0 - math.exp(-dt / tau)) * (target - self._out_pose)
+
+        values = self._compose(self._out_pose, s.gaze_px, s.screen_config, s.gaze_enabled, dt)
+        self._emit(values)
+        return values
+
+    def _emit(self, values: tuple[float, ...]) -> None:
+        """Encodage binaire OpenTrack UDP : 6 doubles (48 octets little-endian)."""
+        self.last_values = values
+        payload = struct.pack("<6d", *values)
         try:
             self.sock.sendto(payload, (self.config.host, self.config.port))
         except Exception as e:
             print(f"[output] Erreur UDP : {e}")
+        self._rate_count += 1
+        now = time.perf_counter()
+        if self._last_emit_t is not None:
+            self._gap_max = max(self._gap_max, now - self._last_emit_t)
+        self._last_emit_t = now
+        if now - self._rate_t0 >= 1.0:
+            self.measured_rate_hz = self._rate_count / (now - self._rate_t0)
+            self.max_gap_ms = self._gap_max * 1000.0
+            self._rate_count = 0
+            self._gap_max = 0.0
+            self._rate_t0 = now
+
+    # ------------------------------------------------------------------ thread d'envoi
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    def start(self) -> None:
+        """Démarre l'envoi régulier à `send_rate_hz` (sans effet si send_rate_hz = 0)."""
+        if self._running or self.config.send_rate_hz <= 0:
+            return
+        # Régularité du thread : quand la boucle principale garde le GIL (code Python, extension C),
+        # le thread d'envoi ne le récupère qu'au bout de l'intervalle de bascule, arrondi par
+        # Windows à son horloge système (15,6 ms par défaut) -> trous de ~20 ms mesurés.
+        # Horloge à 1 ms (comme la plupart des jeux) et bascule toutes les 2 ms : trous de ~10 ms.
+        sys.setswitchinterval(min(sys.getswitchinterval(), 0.002))
+        if platform.system() == "Windows" and not self._fine_timer:
+            try:
+                ctypes.windll.winmm.timeBeginPeriod(1)
+                self._fine_timer = True
+            except Exception:
+                pass
+        self._running = True
+        self._thread = threading.Thread(target=self._run, name="opentrack-sender", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        period = 1.0 / max(self.config.send_rate_hz, 1.0)
+        next_t = time.perf_counter()
+        while self._running:
+            try:
+                self._tick(time.perf_counter())
+            except Exception as e:  # le thread ne doit jamais mourir silencieusement
+                print(f"[output] Erreur d'envoi : {e}")
+            next_t += period
+            delay = next_t - time.perf_counter()
+            if delay > 0:
+                time.sleep(delay)
+            elif delay < -period:
+                next_t = time.perf_counter()  # gros retard : on se recale sans rafale
 
     def close(self) -> None:
-        """Ferme la socket UDP."""
+        """Arrête le thread d'envoi et ferme la socket UDP."""
+        self._running = False
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+        self._thread = None
+        if self._fine_timer:
+            try:
+                ctypes.windll.winmm.timeEndPeriod(1)
+            except Exception:
+                pass
+            self._fine_timer = False
         self.sock.close()
 
 
@@ -241,6 +482,10 @@ class Visualizer:
         rls_count: int = 0,
         profile_name: str = "",
         jitter: dict[str, float] | None = None,
+        paused: bool = False,
+        send_rate_hz: float = 0.0,
+        send_gap_ms: float = 0.0,
+        hotkey_hint: str = "",
     ) -> int:
         """Affiche le retour vidéo avec l'interface HUD complète.
 
@@ -314,6 +559,10 @@ class Visualizer:
                 f"Filtre={step_latencies.get('filter', 0):.1f} | "
                 f"Total={step_latencies.get('total', 0):.1f}"
             )
+            if send_rate_hz > 0:
+                lat_str += f" | Envoi {send_rate_hz:.0f} Hz"
+                if send_gap_ms > 0:
+                    lat_str += f" (trou max {send_gap_ms:.0f} ms)"
             cv2.putText(display_frame, lat_str, (15, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (180, 255, 180), 1)
             if jitter:
                 jit_str = (f"Agitation (1 s, si immobile) : tete {jitter['head_deg']:.2f} deg | "
@@ -335,9 +584,16 @@ class Visualizer:
         cv2.circle(display_frame, (pt_x, pt_y), 6, (0, 255, 255), 1)
         cv2.putText(display_frame, "Ecran", (mini_x + 5, mini_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (150, 150, 150), 1)
 
-        # Légende des touches en bas
-        help_str = "[C] Calibrer  [G] Regard ON/OFF  [O] Overlay ON/OFF  [R] Recentrer  [Q] Quitter"
-        cv2.putText(display_frame, help_str, (15, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+        # Pause : la caméra du jeu est ramenée au centre
+        if paused:
+            cv2.putText(display_frame, "PAUSE - camera au centre", (15, panel_h + 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 165, 255), 3)
+
+        # Légende des touches en bas (cv2.putText ne gère pas les accents)
+        help_str = "[C] Calibrer  [G] Regard  [O] Overlay  [R] Recentrer  [Espace] Pause  [Q] Quitter"
+        cv2.putText(display_frame, help_str, (15, h - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+        if hotkey_hint:
+            cv2.putText(display_frame, hotkey_hint, (15, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
         cv2.imshow(self.window_name, display_frame)
         return cv2.waitKey(1) & 0xFF

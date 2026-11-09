@@ -28,6 +28,7 @@ from filters import OneEuroFilter, LossBlender, BlinkDetector
 from output import OpenTrackSender, Visualizer, OutputConfig
 from overlay import GazeOverlay
 from hotkeys import GlobalHotkeys, format_hotkey
+from panel import ControlPanel, PANEL_FIELDS
 from paths import data_path
 from profile import (
     Profile,
@@ -120,6 +121,7 @@ def parse_arguments() -> tuple[argparse.Namespace, Profile]:
     # Fonctionnalités avancées (Étapes 5 & 6)
     parser.add_argument("--overlay", action="store_true", default=active_profile.overlay_enabled, help="Active l'overlay transparent")
     parser.add_argument("--no-recalib", action="store_true", default=not active_profile.recalib_on_click, help="Désactive recalibration RLS")
+    parser.add_argument("--no-panel", action="store_true", help="Sans panneau de contrôle (fenêtre Moniteur seule)")
 
     # Paramètres de lissage One Euro (séparés : pose en degrés/cm, regard en pixels)
     parser.add_argument("--pose-min-cutoff", type=float, default=active_profile.pose_min_cutoff, help="Fréquence min One Euro de la pose tête (Hz)")
@@ -281,6 +283,59 @@ def main() -> None:
     filtered_xyz = (0.0, 0.0, -60.0)
     filtered_ypr = (0.0, 0.0, 0.0)
     prev_mouse_down = False
+    blinking = False
+
+    # Le profil actif reflète ce qui tourne réellement (options de la ligne de commande comprises) :
+    # le panneau l'affiche et « Sauvegarder » l'écrit tel quel.
+    current_profile.head_yaw_gain = args.head_yaw_gain
+    current_profile.head_pitch_gain = args.head_pitch_gain
+    current_profile.pose_min_cutoff = args.pose_min_cutoff
+    current_profile.gaze_yaw_gain = args.gaze_yaw_gain
+    current_profile.gaze_pitch_gain = args.gaze_pitch_gain
+    current_profile.gaze_deadzone = args.gaze_deadzone
+    current_profile.gaze_smoothing_s = args.gaze_smoothing
+    current_profile.recalib_on_click = enable_recalib
+    profile_version = 0  # incrémenté à chaque changement de profil (le panneau recharge ses curseurs)
+    profile_values = {f: getattr(current_profile, f) for f in PANEL_FIELDS}
+
+    def apply_profile_settings(prof: Profile) -> None:
+        """Applique en direct les réglages d'un profil (gains, lissages, recalibration au clic)."""
+        nonlocal enable_recalib
+        cfg = sender.config
+        cfg.gaze_yaw_gain = prof.gaze_yaw_gain
+        cfg.gaze_pitch_gain = prof.gaze_pitch_gain
+        cfg.gaze_deadzone = prof.gaze_deadzone
+        cfg.gaze_curve_exp = prof.gaze_curve_exp
+        cfg.gaze_smoothing_s = prof.gaze_smoothing_s
+        cfg.head_yaw_gain = prof.head_yaw_gain
+        cfg.head_pitch_gain = prof.head_pitch_gain
+        cfg.max_prediction_s = prof.prediction_s
+        cfg.output_smoothing_s = prof.output_smoothing_s
+        enable_recalib = prof.recalib_on_click
+        pose_filter.set_params(min_cutoff=prof.pose_min_cutoff, beta=prof.pose_beta)
+        gaze_filter.set_params(min_cutoff=prof.gaze_min_cutoff, beta=prof.gaze_beta, median_window=prof.gaze_median)
+
+    def switch_profile(name: str) -> None:
+        """Charge et applique un autre profil."""
+        nonlocal current_profile, current_prof_idx, available_profiles, profile_version, profile_values
+        available_profiles = list_profiles()
+        current_profile = load_profile(name)
+        if current_profile.name in available_profiles:
+            current_prof_idx = available_profiles.index(current_profile.name)
+        apply_profile_settings(current_profile)
+        profile_version += 1
+        profile_values = {f: getattr(current_profile, f) for f in PANEL_FIELDS}
+        print(f"\n[profile] Bascule vers [{current_profile.name.upper()}] : {current_profile.description}")
+        print(f"          -> Tête : gain {current_profile.head_yaw_gain:.1f} / {current_profile.head_pitch_gain:.1f} | "
+              f"Regard : {current_profile.gaze_yaw_gain:.2f} / {current_profile.gaze_pitch_gain:.2f} | "
+              f"Recalibration au clic : {'active' if enable_recalib else 'désactivée'} "
+              f"(raccourcis globaux et fréquence d'envoi : ceux du lancement)")
+
+    # Panneau de contrôle (réglages en direct, commandes, état)
+    panel: ControlPanel | None = None
+    if not args.no_panel:
+        panel = ControlPanel()
+        panel.start()
 
     def read_for_calibration():
         """Capture pour la calibration avec le même effet miroir que la boucle principale.
@@ -329,7 +384,8 @@ def main() -> None:
             print(f"  [{format_hotkey(combo)}] : {hotkey_labels[action]} -> INDISPONIBLE "
                   f"({hotkeys.errors.get(action, 'erreur inconnue')}) ; changer « hotkey_{action} » dans le profil")
     print(f"Envoi OpenTrack : {args.send_rate:.0f} Hz" if args.send_rate > 0 else "Envoi OpenTrack : une fois par image")
-    print(f"Recalibration au clic : {'active (curseur visible seulement)' if not args.no_recalib else 'désactivée'}\n")
+    print(f"Recalibration au clic : {'active (curseur visible seulement)' if not args.no_recalib else 'désactivée'}")
+    print("Panneau de contrôle : " + ("ouvert (le fermer arrête le tracker)" if panel else "désactivé (--no-panel)") + "\n")
 
     step_latencies: dict[str, float] = {}
     # Mesure de l'agitation sur ~1 s glissante (écart-type des sorties filtrées)
@@ -511,16 +567,49 @@ def main() -> None:
                 hotkey_hint=hotkey_hint,
             )
 
-            # Commandes : touches du Moniteur et raccourcis globaux (en jeu)
-            actions = hotkeys.poll()
-            if key == ord("r"):
-                actions.append("recenter")
-            elif key == ord("g"):
-                actions.append("gaze")
-            elif key == ord(" "):
-                actions.append("pause")
-            for action in actions:
-                if action == "recenter":
+            # État pour le panneau de contrôle
+            def panel_status(calibrating: bool = False) -> dict:
+                return {
+                    "face": face_data.detected, "blinking": blinking, "fps": capture.measured_fps,
+                    "send_hz": sender.measured_rate_hz, "gap_ms": sender.max_gap_ms, "paused": sender.paused,
+                    "gaze_enabled": gaze_enabled, "calibrated": calibration_mgr.is_calibrated,
+                    "rls": calibration_mgr.rls_update_count, "overlay": overlay.is_visible,
+                    "profile_name": current_profile.name, "profiles": available_profiles,
+                    "profile_version": profile_version, "profile_values": dict(profile_values),
+                    "hotkey_hint": hotkey_hint, "calibrating": calibrating,
+                }
+
+            if panel is not None:
+                panel.publish(panel_status())
+
+            # Commandes : touches du Moniteur, raccourcis globaux (en jeu) et panneau de contrôle
+            commands = [("action", a) for a in hotkeys.poll()]
+            if panel is not None:
+                commands += panel.poll()
+            key_actions = {
+                ord("r"): "recenter", ord("g"): "gaze", ord(" "): "pause", ord("c"): "calibrate",
+                ord("o"): "overlay", ord("p"): "next_profile", ord("s"): "save", ord("q"): "quit", 27: "quit",
+            }
+            if key in key_actions:
+                commands.append(("action", key_actions[key]))
+
+            quit_requested = False
+            for command in commands:
+                kind = command[0]
+                if kind == "set":  # curseur ou case du panneau : réglage appliqué en direct
+                    _, field, value = command
+                    setattr(current_profile, field, value)
+                    profile_values[field] = value
+                    apply_profile_settings(current_profile)
+                    continue
+                if kind == "profile":
+                    switch_profile(command[1])
+                    continue
+                action = command[1]
+                if action == "quit":
+                    quit_requested = True
+                    break
+                elif action == "recenter":
                     sender.recenter(
                         current_pose_xyz=filtered_xyz,
                         current_pose_ypr=filtered_ypr,
@@ -533,59 +622,42 @@ def main() -> None:
                 elif action == "pause":
                     paused = sender.toggle_pause()
                     print(f"[main] {'PAUSE : caméra ramenée au centre' if paused else 'Reprise du suivi'}")
-
-            if key == ord("q") or key == 27:  # 'q' ou ESC
+                elif action == "calibrate":
+                    print(f"[main] Démarrage de la calibration affine {args.calib_points} points...")
+                    if panel is not None:
+                        panel.publish(panel_status(calibrating=True))
+                    success = calibration_mgr.run_interactive_calibration(
+                        capture_fn=read_for_calibration,
+                        face_detector=face_detector,
+                        gaze_estimator=gaze_estimator,
+                        normalizer=normalizer,
+                    )
+                    if success:
+                        calibration_mgr.save(calib_file)
+                        print(f"[main] Calibration sauvegardée dans {calib_file}")
+                        pose_filter.reset()
+                        gaze_filter.reset()
+                elif action == "overlay":
+                    vis = overlay.toggle()
+                    print(f"[main] Overlay transparent in-game : {'ACTIVÉ' if vis else 'DÉSACTIVÉ'}")
+                elif action == "next_profile":
+                    names = list_profiles()
+                    if names:
+                        switch_profile(names[(current_prof_idx + 1) % len(names)])
+                elif action == "save":
+                    save_profile(current_profile)
+                    print(f"[profile] Configuration sauvegardée dans 'profiles/{current_profile.name}.json'.")
+            if quit_requested:
                 print("[main] Arrêt demandé par l'utilisateur.")
                 break
-            elif key == ord("c"):  # Lancer la calibration
-                print(f"[main] Démarrage de la calibration affine {args.calib_points} points...")
-                success = calibration_mgr.run_interactive_calibration(
-                    capture_fn=read_for_calibration,
-                    face_detector=face_detector,
-                    gaze_estimator=gaze_estimator,
-                    normalizer=normalizer,
-                )
-                if success:
-                    calibration_mgr.save(calib_file)
-                    print(f"[main] Calibration sauvegardée dans {calib_file}")
-                    pose_filter.reset()
-                    gaze_filter.reset()
-            elif key == ord("o"):  # Toggle overlay transparent on/off (Étape 6)
-                vis = overlay.toggle()
-                print(f"[main] Overlay transparent in-game : {'ACTIVÉ' if vis else 'DÉSACTIVÉ'}")
-            elif key == ord("p"):  # Basculer vers le profil JSON suivant (Étape 7)
-                available_profiles = list_profiles()
-                if available_profiles:
-                    current_prof_idx = (current_prof_idx + 1) % len(available_profiles)
-                    new_name = available_profiles[current_prof_idx]
-                    current_profile = load_profile(new_name)
-                    # Mise à jour dynamique des gains et paramètres
-                    sender.config.gaze_yaw_gain = current_profile.gaze_yaw_gain
-                    sender.config.gaze_pitch_gain = current_profile.gaze_pitch_gain
-                    sender.config.gaze_deadzone = current_profile.gaze_deadzone
-                    sender.config.gaze_curve_exp = current_profile.gaze_curve_exp
-                    sender.config.gaze_smoothing_s = current_profile.gaze_smoothing_s
-                    sender.config.head_yaw_gain = current_profile.head_yaw_gain
-                    sender.config.head_pitch_gain = current_profile.head_pitch_gain
-                    sender.config.max_prediction_s = current_profile.prediction_s
-                    sender.config.output_smoothing_s = current_profile.output_smoothing_s
-                    enable_recalib = current_profile.recalib_on_click
-                    pose_filter.set_params(min_cutoff=current_profile.pose_min_cutoff, beta=current_profile.pose_beta)
-                    gaze_filter.set_params(min_cutoff=current_profile.gaze_min_cutoff, beta=current_profile.gaze_beta,
-                                           median_window=current_profile.gaze_median)
-                    print(f"\n[profile] Bascule vers [{current_profile.name.upper()}] : {current_profile.description}")
-                    print(f"          -> Yaw gain: {current_profile.gaze_yaw_gain:.2f} | Pitch gain: {current_profile.gaze_pitch_gain:.2f} | Deadzone: {current_profile.gaze_deadzone:.2f} | Exp: {current_profile.gaze_curve_exp:.2f}")
-                    print(f"          -> Recalibration au clic : {'active' if enable_recalib else 'désactivée'} "
-                          f"(raccourcis globaux et fréquence d'envoi : ceux du lancement)")
-            elif key == ord("s"):  # Sauvegarder la configuration dans le profil
-                save_profile(current_profile)
-                print(f"[profile] Configuration sauvegardée dans 'profiles/{current_profile.name}.json'.")
 
     except KeyboardInterrupt:
         print("\n[main] Interruption clavier (Ctrl+C).")
     finally:
         print("[main] Fermeture propre des flux et sockets...")
         hotkeys.stop()
+        if panel is not None:
+            panel.stop()
         overlay.stop()
         capture.release()
         sender.close()

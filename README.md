@@ -24,6 +24,20 @@ python main.py --gaze-mode net --profile default
 Au premier lancement, la recherche du meilleur mode caméra prend ~20 s ; il est ensuite
 mémorisé dans `data/camera_mode.json` (supprimer ce fichier pour relancer la recherche).
 
+### Panneau de contrôle
+
+Une fenêtre « Eyetrack - Panneau de contrôle » s'ouvre avec le tracker :
+
+- **État** : visage détecté / perdu / clignement, images par seconde, envois à OpenTrack et plus
+  long trou, regard actif ou coupé, calibration, pause ;
+- **Commandes** : recentrer, pause, regard on/off, calibrer, overlay, quitter ;
+- **Profil** : changer de profil et sauvegarder les réglages dans son fichier JSON ;
+- **Réglages en direct** : gains de la tête, lissage de la tête au repos, part du regard, zone
+  morte et lissage du regard, recalibration sur les clics. Les changements s'appliquent tout de
+  suite ; ils ne sont gardés que si l'on clique sur « Sauvegarder les réglages ».
+
+Fermer le panneau arrête le tracker. Sans panneau : `python main.py --no-panel`.
+
 ### Raccourcis en jeu (globaux)
 
 Ils marchent même quand le jeu a le focus :
@@ -99,12 +113,13 @@ filters.py          filtre One Euro (+ médian), maintien et fondu en cas de per
 geometry.py         géométrie de l'écran (mm, pixels, angles)
 output.py           envoi UDP OpenTrack (120 Hz, prédiction, pause), courbe du regard, HUD
 overlay.py          overlay transparent click-through (Windows)
+panel.py            panneau de contrôle (état, commandes, réglages en direct)
 hotkeys.py          raccourcis clavier globaux (Windows), actifs en jeu
 profile.py          profils JSON par jeu
 
 profiles/           profils de jeux (versionnés)
 tools/              diagnostics : diag_regard.py, diag_stabilite.py, validate.py
-tests/              tests automatiques (sens des axes, envoi OpenTrack, raccourcis)
+tests/              tests automatiques (sens des axes, envoi OpenTrack, raccourcis, panneau)
 docs/               état de l'art de l'eye tracking webcam
 models/             modèles téléchargés (hors git)
 data/               calibrations, cache caméra, sorties de diagnostic (hors git)
@@ -143,10 +158,9 @@ raccourcis par défaut.
 
 Ensuite :
 
-- **Phase 2 — confort** : panneau de contrôle (profil, curseurs de gains et de lissage en
-  direct, calibrer / recentrer, état fps / visage / clignement), icône dans la barre des
-  tâches ; calibration guidée (note de qualité, refaire un point raté, cibles plus près des
-  bords, alerte reflets sur les lunettes).
+- **Phase 2 — confort** : panneau de contrôle fait (branche `panneau-controle`). Reste :
+  calibration guidée (note de qualité, refaire un point raté, cibles plus près des bords,
+  alerte reflets sur les lunettes), icône dans la zone de notification.
 - **Phase 3 — paquet cadeau** : `.exe` installable (PyInstaller + installateur), assistant
   de premier lancement (caméra, écran, distance, calibration), profil OpenTrack fourni
   (entrée UDP, Accela, axes réglés). Rappel : le modèle de regard est non commercial.

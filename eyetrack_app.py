@@ -69,10 +69,14 @@ def run() -> int:
     if "--self-test" in sys.argv:
         return self_test()
     # Instance unique vérifiée avant d'ouvrir le journal : celui de l'instance lancée reste intact
+    import app_settings
+    from i18n import set_language, tr
+    set_language(app_settings.load()["language"])
     instance = winapp.SingleInstance()
     if instance.already_running:
         if not winapp.show_running_instance():
-            winapp.message_box("Eyetrack", "Eyetrack est déjà lancé : son icône est près de l'horloge.", error=False)
+            winapp.message_box("Eyetrack", tr("Eyetrack est déjà lancé : son icône est près de l'horloge."),
+                               error=False)
         return 0
 
     paths.prepare_user_dirs()
@@ -81,7 +85,6 @@ def run() -> int:
     print(f"Données : {paths.DATA_DIR}")
 
     try:
-        import app_settings
         settings = app_settings.load()
         if len(sys.argv) == 1:  # double-clic : dernier profil utilisé
             sys.argv += ["--profile", settings["last_profile"]]
@@ -91,14 +94,15 @@ def run() -> int:
         main.main()
     except SystemExit as e:  # arguments invalides (argparse)
         if e.code not in (0, None):
-            winapp.report_error(f"Arguments invalides : {' '.join(sys.argv[1:])}\n\nDétails : {paths.LOG_FILE}")
+            winapp.report_error(tr("Arguments invalides : {args}\n\nDétails : {log}",
+                                   args=" ".join(sys.argv[1:]), log=paths.LOG_FILE))
             return int(e.code) if isinstance(e.code, int) else 2
     except Exception as e:
         print(traceback.format_exc())
         winapp.report_error(
-            f"Eyetrack s'est arrêté à cause d'une erreur :\n\n{type(e).__name__} : {e}\n\n"
-            f"Détails dans le journal :\n{paths.LOG_FILE}",
-            title="Eyetrack - erreur")
+            tr("Eyetrack s'est arrêté à cause d'une erreur :\n\n{kind} : {err}\n\nDétails dans le journal :\n{log}",
+               kind=type(e).__name__, err=e, log=paths.LOG_FILE),
+            title=tr("Eyetrack - erreur"))
         return 1
     finally:
         instance.release()

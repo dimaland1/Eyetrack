@@ -15,6 +15,8 @@ import queue
 import threading
 from ctypes import wintypes
 
+from i18n import tr
+
 WM_NULL = 0x0000
 WM_DESTROY = 0x0002
 WM_CLOSE = 0x0010
@@ -159,12 +161,12 @@ class TrayIcon:
     # ------------------------------------------------------------------ thread de l'icône
     def _menu_items(self) -> list[tuple[str, str] | None]:
         return [
-            ("toggle_panel", "Masquer le panneau" if self.panel_visible else "Afficher le panneau"),
-            ("recenter", "Recentrer"),
-            ("pause", "Reprendre le suivi" if self.paused else "Pause (caméra au centre)"),
-            ("gaze", "Couper le regard" if self.gaze_enabled else "Réactiver le regard"),
+            ("toggle_panel", tr("Masquer le panneau") if self.panel_visible else tr("Afficher le panneau")),
+            ("recenter", tr("Recentrer")),
+            ("pause", tr("Reprendre le suivi") if self.paused else tr("Pause (caméra au centre)")),
+            ("gaze", tr("Couper le regard") if self.gaze_enabled else tr("Réactiver le regard")),
             None,
-            ("quit", "Quitter Eyetrack"),
+            ("quit", tr("Quitter Eyetrack")),
         ]
 
     def _nid(self, flags: int) -> NOTIFYICONDATAW:

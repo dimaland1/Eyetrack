@@ -15,6 +15,8 @@ import platform
 import queue
 import threading
 
+from i18n import tr
+
 MOD_ALT = 0x0001
 MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
@@ -70,7 +72,8 @@ def format_hotkey(text: str) -> str:
     """Affichage lisible : « ctrl+shift+f9 » -> « Ctrl+Maj+F9 »."""
     names = {"ctrl": "Ctrl", "control": "Ctrl", "shift": "Maj", "maj": "Maj", "alt": "Alt", "win": "Win"}
     parts = [p.strip().lower() for p in str(text).replace(" ", "").split("+") if p.strip()]
-    return "+".join(names.get(p, p.upper() if len(p) <= 3 else p.capitalize()) for p in parts)
+    return "+".join(tr(names[p]) if p in names else (p.upper() if len(p) <= 3 else p.capitalize())
+                    for p in parts)
 
 
 class GlobalHotkeys:

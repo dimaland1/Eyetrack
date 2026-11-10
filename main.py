@@ -33,7 +33,9 @@ from panel import ControlPanel, PANEL_FIELDS, make_preview
 from paths import ICON_FILE, data_path
 from tray import TrayIcon
 import app_settings
+import i18n
 import winapp
+from i18n import tr
 from face import glare_on_iris, glare_label
 from profile import (
     Profile,
@@ -152,6 +154,7 @@ def main() -> None:
     """Exécute la boucle principale du tracker."""
     args, current_profile = parse_arguments()
     app_cfg = app_settings.update(last_profile=current_profile.name)  # repris au prochain lancement
+    i18n.set_language(app_cfg["language"])  # "auto" : langue de Windows
     available_profiles = list_profiles()
     current_prof_idx = (
         available_profiles.index(current_profile.name)
@@ -187,7 +190,7 @@ def main() -> None:
     tray: TrayIcon | None = None
     icon_file = str(ICON_FILE) if ICON_FILE.exists() else None
     if not args.no_panel:
-        tray = TrayIcon(icon_path=icon_file, tooltip="Eyetrack - démarrage (caméra, modèles)…")
+        tray = TrayIcon(icon_path=icon_file, tooltip=tr("Eyetrack - démarrage (caméra, modèles)…"))
         if tray.start():
             atexit.register(tray.stop)
         else:
@@ -205,10 +208,10 @@ def main() -> None:
         if tray is not None:
             tray.stop()
         winapp.report_error(
-            f"Impossible d'ouvrir la caméra (n° {args.camera}).\n\n{e}\n\n"
-            "Vérifiez qu'elle est branchée et qu'aucune autre application (visio, navigateur, "
-            "logiciel de la webcam…) ne l'utilise, puis relancez Eyetrack.",
-            title="Eyetrack - caméra introuvable")
+            tr("Impossible d'ouvrir la caméra (n° {n}).\n\n{err}\n\nVérifiez qu'elle est branchée et qu'aucune "
+               "autre application (visio, navigateur, logiciel de la webcam…) ne l'utilise, puis relancez Eyetrack.",
+               n=args.camera, err=e),
+            title=tr("Eyetrack - caméra introuvable"))
         return
 
     print(f"[capture] Caméra active : {capture.actual_width}x{capture.actual_height} @ {capture.actual_fps:.1f} fps")
@@ -295,10 +298,14 @@ def main() -> None:
     }
     hotkeys = GlobalHotkeys(hotkey_bindings)
     hotkey_status = hotkeys.start()
-    short_labels = {"recenter": "recentrer", "gaze": "regard", "pause": "pause"}
-    active_hotkeys = [f"{format_hotkey(c)} {short_labels[a]}" for a, c in hotkey_bindings.items()
-                      if c and hotkey_status.get(a)]
-    hotkey_hint = ("En jeu : " + " | ".join(active_hotkeys)) if active_hotkeys else ""
+    def make_hotkey_hint() -> str:
+        """Rappel des raccourcis en jeu affiché en bas du panneau (dans la langue courante)."""
+        short_labels = {"recenter": tr("recentrer"), "gaze": tr("regard"), "pause": tr("pause")}
+        active = [f"{format_hotkey(c)} {short_labels[a]}" for a, c in hotkey_bindings.items()
+                  if c and hotkey_status.get(a)]
+        return tr("En jeu : {keys}", keys=" | ".join(active)) if active else ""
+
+    hotkey_hint = make_hotkey_hint()
 
     # 8. Overlay transparent click-through (Étape 6)
     overlay = GazeOverlay(width=screen_w, height=screen_h)
@@ -628,11 +635,12 @@ def main() -> None:
             # Temps de calcul seul (sans l'attente de l'image suivante de la caméra)
             t_face_ms, t_gaze_ms = step_latencies.get("face", 0.0), step_latencies.get("gaze", 0.0)
             t_calc_ms = t_face_ms + t_gaze_ms + step_latencies.get("filter", 0.0)
-            diag_text = f"Calcul : {t_calc_ms:.0f} ms par image (visage {t_face_ms:.0f}, regard {t_gaze_ms:.0f})"
+            diag_text = tr("Calcul : {calc} ms par image (visage {face}, regard {gaze})",
+                           calc=f"{t_calc_ms:.0f}", face=f"{t_face_ms:.0f}", gaze=f"{t_gaze_ms:.0f}")
             if jitter:
-                diag_text += (f"\nAgitation (1 s, si immobile) : tête {jitter['head_deg']:.2f}°, "
-                              f"regard {jitter['gaze_px']:.0f} px")
-            diag_text += f"\nReflets sur les iris : {glare_level * 100:.1f} %"
+                diag_text += "\n" + tr("Agitation (1 s, si immobile) : tête {head}°, regard {gaze} px",
+                                       head=f"{jitter['head_deg']:.2f}", gaze=f"{jitter['gaze_px']:.0f}")
+            diag_text += "\n" + tr("Reflets sur les iris : {pct} %", pct=f"{glare_level * 100:.1f}")
             if opentrack_local and panel is not None and time.perf_counter() >= next_opentrack_check:
                 next_opentrack_check = time.perf_counter() + 2.0
                 opentrack_running = winapp.is_process_running(winapp.OPENTRACK_EXE)
@@ -649,7 +657,8 @@ def main() -> None:
                     "diag": diag_text, "glare": glare_level, "glare_label": glare_label(glare_level),
                     "calib_quality": calibration_mgr.quality_label, "calib_deg": calibration_mgr.quality_deg,
                     "opentrack_running": opentrack_running,
-                    "app_settings": {"launch_opentrack": app_cfg["launch_opentrack"]},
+                    "app_settings": {"launch_opentrack": app_cfg["launch_opentrack"],
+                                     "language": app_cfg["language"]},
                 }
 
             if panel is not None:
@@ -688,6 +697,16 @@ def main() -> None:
                     continue
                 if kind == "app":  # réglage de l'application (pas du profil), enregistré tout de suite
                     app_cfg = app_settings.update(**{command[1]: command[2]})
+                    if command[1] == "language":
+                        # Langue changée : textes recalculés et panneau reconstruit tout de suite
+                        print(f"[main] Langue de l'interface : {i18n.set_language(app_cfg['language'])}")
+                        hotkey_hint = make_hotkey_hint()
+                        tray_state = None
+                        if panel is not None:
+                            panel.stop()
+                            panel = ControlPanel(close_to_tray=tray is not None, icon_path=icon_file)
+                            panel.start()
+                            panel.show()
                     continue
                 action = command[1]
                 if action == "quit":
@@ -738,13 +757,13 @@ def main() -> None:
                     result = winapp.launch_opentrack(app_cfg["opentrack_path"])
                     print(f"[opentrack] {result}")
                     if result == "introuvable" and tray is not None:
-                        tray.notify("OpenTrack introuvable", "Installez OpenTrack (option 8 du menu Eyetrack.bat) "
-                                    "ou indiquez son chemin dans app_settings.json.")
+                        tray.notify(tr("OpenTrack introuvable"),
+                                    tr("Installez OpenTrack ou indiquez son chemin (opentrack_path) dans app_settings.json."))
                     next_opentrack_check = time.perf_counter() + 1.0
                 elif action == "panel_hidden" and tray is not None and not panel_hidden_notified:
                     panel_hidden_notified = True
-                    tray.notify("Eyetrack continue", "Le suivi continue en arrière-plan. Cliquez sur l'icône "
-                                "Eyetrack pour rouvrir le panneau ; clic droit pour quitter.")
+                    tray.notify(tr("Eyetrack continue"), tr("Le suivi continue en arrière-plan. Cliquez sur l'icône "
+                                                           "Eyetrack pour rouvrir le panneau ; clic droit pour quitter."))
                 elif action == "save":
                     save_profile(current_profile)
                     print(f"[profile] Configuration sauvegardée dans 'profiles/{current_profile.name}.json'.")
@@ -755,8 +774,8 @@ def main() -> None:
             if tray is not None:
                 tray.paused, tray.gaze_enabled = sender.paused, gaze_enabled
                 tray.panel_visible = panel.is_visible if panel is not None else False
-                state = ("en pause (caméra au centre)" if sender.paused
-                         else ("suivi actif" if face_data.detected else "visage perdu"))
+                state = (tr("en pause (caméra au centre)") if sender.paused
+                         else (tr("suivi actif") if face_data.detected else tr("visage perdu")))
                 if state != tray_state:
                     tray_state = state
                     tray.set_tooltip(f"Eyetrack - {state}")

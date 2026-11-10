@@ -31,6 +31,9 @@ reste en place.
   explique la calibration et montre l'image de la caméra (cadre vert = visage détecté).
   `Entrée` lance la calibration, `Échap` la remet à plus tard (bouton « Calibrer le regard » du
   panneau) ; elle est reproposée au lancement suivant tant qu'il n'y a pas de calibration.
+- **Langue** : français ou anglais (panneau, icône, écrans de calibration, messages d'erreur).
+  Par défaut, celle de Windows ; à changer dans « Réglages avancés » → « Langue / Language »
+  (appliqué tout de suite). Le journal `eyetrack.log` reste en français.
 - **Déjà lancé ?** Un nouveau double-clic rouvre simplement le panneau (une seule instance : la
   caméra et le port d'OpenTrack ne se partagent pas).
 - **Erreurs** (caméra introuvable ou occupée…) : affichées dans une fenêtre. Journal du dernier
@@ -171,7 +174,8 @@ main.py             point d'entrée : boucle capture -> visage -> regard -> filt
 eyetrack_app.py     point d'entrée d'Eyetrack.exe (dernier profil, OpenTrack, instance unique, erreurs)
 eyetrack.spec       recette PyInstaller de l'exécutable (utilisée par tools/build_exe.py)
 paths.py            chemins (sources : models/, data/, profiles/ ; exécutable : %LOCALAPPDATA%)
-app_settings.py     réglages de l'application (dernier profil, ouverture d'OpenTrack)
+app_settings.py     réglages de l'application (dernier profil, ouverture d'OpenTrack, langue)
+i18n.py             langue de l'interface : français / anglais (texte français = clé, traduction anglaise)
 winapp.py           application sans console : journal, fenêtres d'erreur, instance unique, OpenTrack
 
 capture.py          webcam : choix automatique du mode qui délivre le plus d'images

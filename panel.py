@@ -23,7 +23,9 @@ from tkinter import ttk
 import cv2
 import numpy as np
 
-# Curseurs : (champ du profil, libellé, min, max, pas)
+from i18n import CHOICES, LANGUAGES, tr
+
+# Curseurs : (champ du profil, libellé, min, max, pas) ; libellés traduits à l'affichage (tr)
 # Toujours visibles : les trois réglages qu'on change vraiment d'un jeu à l'autre.
 ESSENTIAL_SLIDERS = [
     ("head_yaw_gain", "Tête : amplification gauche / droite", 0.5, 4.0, 0.1),
@@ -72,12 +74,17 @@ def make_preview(frame_bgr: np.ndarray, face_detected: bool, iris_px: list[tuple
     return cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
 
 
+def language_label(choice: str) -> str:
+    """Nom affiché d'un choix de langue (chaque langue dans sa propre langue)."""
+    return LANGUAGES.get(choice) or tr("Auto (langue de Windows)")
+
+
 class ControlPanel:
     """Fenêtre de contrôle du tracker, exécutée dans un thread dédié."""
 
-    def __init__(self, title: str = "Eyetrack - Panneau de contrôle", close_to_tray: bool = False,
+    def __init__(self, title: str | None = None, close_to_tray: bool = False,
                  icon_path: str | None = None) -> None:
-        self.title = title
+        self.title = title or tr("Eyetrack - Panneau de contrôle")
         self.close_to_tray = close_to_tray  # croix = réduire (icône de la zone de notification)
         self.icon_path = icon_path
         self.is_running = False
@@ -96,6 +103,7 @@ class ControlPanel:
         self._scales: dict[str, tk.Scale] = {}
         self._checks: dict[str, tk.BooleanVar] = {}
         self._app_checks: dict[str, tk.BooleanVar] = {}
+        self._language_box: ttk.Combobox | None = None
         self._shown_app: dict | None = None
         self._buttons: dict[str, ttk.Button] = {}
         self._profile_box: ttk.Combobox | None = None
@@ -178,6 +186,7 @@ class ControlPanel:
             self._scales.clear()
             self._checks.clear()
             self._app_checks.clear()
+            self._language_box = None
             self._buttons.clear()
             self._profile_box = None
             self._hint = None
@@ -205,18 +214,18 @@ class ControlPanel:
         pad = {"padx": 8, "pady": 4}
 
         # --- État
-        st = ttk.LabelFrame(root, text="État")
+        st = ttk.LabelFrame(root, text=tr("État"))
         st.grid(row=0, column=0, sticky="ew", **pad)
         rows = [("face", "Visage"), ("glare", "Reflets lunettes"), ("camera", "Caméra"), ("opentrack", "OpenTrack"),
                 ("gaze", "Regard"), ("calib", "Calibration"), ("mode", "Caméra du jeu")]
         for i, (key, text) in enumerate(rows):
-            tk.Label(st, text=text + " :", anchor="w", width=15).grid(row=i, column=0, sticky="w", padx=6)
+            tk.Label(st, text=tr("{label} :", label=tr(text)), anchor="w", width=15).grid(row=i, column=0, sticky="w", padx=6)
             lbl = tk.Label(st, text="…", anchor="w", width=40)
             lbl.grid(row=i, column=1, sticky="w")
             self._labels[key] = lbl
 
         # --- Commandes
-        cmd = ttk.LabelFrame(root, text="Commandes")
+        cmd = ttk.LabelFrame(root, text=tr("Commandes"))
         cmd.grid(row=1, column=0, sticky="ew", **pad)
         buttons = [
             ("recenter", "Recentrer"), ("pause", "Pause"), ("gaze", "Couper le regard"),
@@ -227,72 +236,81 @@ class ControlPanel:
                 command = self._toggle_preview  # géré par le panneau lui-même
             else:
                 command = lambda a=action: self._send("action", a)  # noqa: E731
-            b = ttk.Button(cmd, text=text, width=19, command=command)
+            b = ttk.Button(cmd, text=tr(text), width=19, command=command)
             b.grid(row=i // 3, column=i % 3, padx=4, pady=3)
             self._buttons[action] = b
-        self._buttons["opentrack"] = ttk.Button(cmd, text="Ouvrir OpenTrack", width=19,
+        self._buttons["opentrack"] = ttk.Button(cmd, text=tr("Ouvrir OpenTrack"), width=19,
                                                 command=lambda: self._send("action", "opentrack"))
         self._buttons["opentrack"].grid(row=2, column=0, padx=4, pady=3)
-        self._buttons["quit"] = ttk.Button(cmd, text="Quitter", width=19, command=lambda: self._send("action", "quit"))
+        self._buttons["quit"] = ttk.Button(cmd, text=tr("Quitter"), width=19, command=lambda: self._send("action", "quit"))
         self._buttons["quit"].grid(row=2, column=2, padx=4, pady=3)
 
         # --- Aperçu caméra (colonne de droite, masquée par défaut)
-        pv = ttk.LabelFrame(root, text="Caméra")
+        pv = ttk.LabelFrame(root, text=tr("Caméra"))
         pv.grid(row=0, column=1, rowspan=6, sticky="n", **pad)
-        self._preview_label = tk.Label(pv, text="En attente de l'image…", width=PREVIEW_WIDTH // 8, height=12,
+        self._preview_label = tk.Label(pv, text=tr("En attente de l'image…"), width=PREVIEW_WIDTH // 8, height=12,
                                        bg="#202020", fg="#bbbbbb")
         self._preview_label.grid(row=0, column=0, padx=6, pady=6)
         self._diag = tk.Label(pv, text="", fg=GREY, justify="left", anchor="w")
         self._diag.grid(row=1, column=0, sticky="w", padx=6)
         tk.Label(pv, justify="left", anchor="w", fg=GREY, wraplength=PREVIEW_WIDTH,
-                 text="Points jaunes : iris détectés. Ils doivent rester au centre des pupilles, "
-                      "sans sauter sur un reflet des lunettes.\nCadre vert : visage suivi ; "
-                      "orange : clignement ; rouge : visage perdu.").grid(row=2, column=0, sticky="w", padx=6, pady=(2, 8))
+                 text=tr("Points jaunes : iris détectés. Ils doivent rester au centre des pupilles, sans "
+                         "sauter sur un reflet des lunettes.\nCadre vert : visage suivi ; orange : "
+                         "clignement ; rouge : visage perdu.")).grid(row=2, column=0, sticky="w", padx=6, pady=(2, 8))
         self._preview_box = pv
         pv.grid_remove()
 
         # --- Profil
-        pf = ttk.LabelFrame(root, text="Profil")
+        pf = ttk.LabelFrame(root, text=tr("Profil"))
         pf.grid(row=2, column=0, sticky="ew", **pad)
         box = ttk.Combobox(pf, state="readonly", width=24)
         box.grid(row=0, column=0, padx=6, pady=4)
         box.bind("<<ComboboxSelected>>", lambda _e: self._send("profile", box.get()))
         self._profile_box = box
-        ttk.Button(pf, text="Sauvegarder les réglages", command=lambda: self._send("action", "save")).grid(
+        ttk.Button(pf, text=tr("Sauvegarder les réglages"), command=lambda: self._send("action", "save")).grid(
             row=0, column=1, padx=6, pady=4)
 
         # --- Réglages (essentiels) et réglages avancés (repliés)
         def sliders(parent, spec):
             for i, (field, text, lo, hi, step) in enumerate(spec):
-                tk.Label(parent, text=text, anchor="w", width=38).grid(row=i, column=0, sticky="w", padx=6)
+                tk.Label(parent, text=tr(text), anchor="w", width=38).grid(row=i, column=0, sticky="w", padx=6)
                 sc = tk.Scale(parent, from_=lo, to=hi, resolution=step, orient="horizontal", length=200,
                               showvalue=True, command=lambda v, f=field, s=step: self._on_scale(f, v, s))
                 sc.grid(row=i, column=1, padx=6)
                 self._scales[field] = sc
 
-        rg = ttk.LabelFrame(root, text="Réglages")
+        rg = ttk.LabelFrame(root, text=tr("Réglages"))
         rg.grid(row=3, column=0, sticky="ew", **pad)
         sliders(rg, ESSENTIAL_SLIDERS)
-        self._advanced_btn = ttk.Button(rg, text="Réglages avancés ▸", command=self._toggle_advanced)
+        self._advanced_btn = ttk.Button(rg, text=tr("Réglages avancés ▸"), command=self._toggle_advanced)
         self._advanced_btn.grid(row=len(ESSENTIAL_SLIDERS), column=0, sticky="w", padx=6, pady=(2, 6))
 
-        adv = ttk.LabelFrame(root, text="Réglages avancés")
+        adv = ttk.LabelFrame(root, text=tr("Réglages avancés"))
         adv.grid(row=4, column=0, sticky="ew", **pad)
         sliders(adv, ADVANCED_SLIDERS)
         for i, (field, text) in enumerate(CHECKS):
             # master explicite : sinon Tkinter prend la première fenêtre Tk du programme, celle de
             # l'overlay (autre thread) -> case affichée « − » et variable lue dans le mauvais thread
             var = tk.BooleanVar(master=root, value=False)
-            ttk.Checkbutton(adv, text=text, variable=var,
+            ttk.Checkbutton(adv, text=tr(text), variable=var,
                             command=lambda f=field, v=var: self._on_check(f, v)).grid(
                 row=len(ADVANCED_SLIDERS) + i, column=0, columnspan=2, sticky="w", padx=6, pady=2)
             self._checks[field] = var
         for i, (key, text) in enumerate(APP_CHECKS):
             var = tk.BooleanVar(master=root, value=False)
-            ttk.Checkbutton(adv, text=text, variable=var,
+            ttk.Checkbutton(adv, text=tr(text), variable=var,
                             command=lambda k=key, v=var: self._on_app_check(k, v)).grid(
                 row=len(ADVANCED_SLIDERS) + len(CHECKS) + i, column=0, columnspan=2, sticky="w", padx=6, pady=2)
             self._app_checks[key] = var
+        # Langue : libellé bilingue pour être trouvé quelle que soit la langue affichée ;
+        # le changement est appliqué tout de suite (panneau reconstruit par la boucle principale)
+        lang_row = len(ADVANCED_SLIDERS) + len(CHECKS) + len(APP_CHECKS)
+        tk.Label(adv, text=tr("Langue / Language"), anchor="w").grid(row=lang_row, column=0, sticky="w", padx=6, pady=4)
+        lang_box = ttk.Combobox(adv, state="readonly", width=30, values=[language_label(c) for c in CHOICES])
+        lang_box.grid(row=lang_row, column=1, sticky="w", padx=6, pady=4)
+        lang_box.bind("<<ComboboxSelected>>",
+                      lambda _e: self._send("app", "language", CHOICES[lang_box.current()]))
+        self._language_box = lang_box
         self._advanced = adv
         adv.grid_remove()
 
@@ -303,10 +321,10 @@ class ControlPanel:
         self._advanced_open = not getattr(self, "_advanced_open", False)
         if self._advanced_open:
             self._advanced.grid()
-            self._advanced_btn.config(text="Réglages avancés ▾")
+            self._advanced_btn.config(text=tr("Réglages avancés ▾"))
         else:
             self._advanced.grid_remove()
-            self._advanced_btn.config(text="Réglages avancés ▸")
+            self._advanced_btn.config(text=tr("Réglages avancés ▸"))
 
     def _on_close(self) -> None:
         """Croix de la fenêtre : réduire dans la zone de notification, ou quitter sans icône."""
@@ -347,10 +365,10 @@ class ControlPanel:
             self._preview_box.grid()
         else:
             self._preview_box.grid_remove()
-            self._preview_label.config(image="", text="En attente de l'image…", width=PREVIEW_WIDTH // 8, height=12)
+            self._preview_label.config(image="", text=tr("En attente de l'image…"), width=PREVIEW_WIDTH // 8, height=12)
             self._preview_photo = None
             self._preview_shown_seq = -1
-        self._buttons["preview"].config(text="Masquer la caméra" if self.preview_enabled else "Voir la caméra")
+        self._buttons["preview"].config(text=tr("Masquer la caméra") if self.preview_enabled else tr("Voir la caméra"))
 
     def _update_preview(self) -> None:
         pv = self._preview
@@ -392,42 +410,43 @@ class ControlPanel:
 
     def _update_status(self, s: dict) -> None:
         if s.get("calibrating"):
-            self._set("face", "calibration en cours…", ORANGE)
+            self._set("face", tr("calibration en cours…"), ORANGE)
         elif s.get("face"):
-            self._set("face", "clignement" if s.get("blinking") else "détecté", ORANGE if s.get("blinking") else GREEN)
+            self._set("face", tr("clignement") if s.get("blinking") else tr("détecté"), ORANGE if s.get("blinking") else GREEN)
         else:
-            self._set("face", "perdu (valeur maintenue)", RED)
-        self._set("camera", f"{s.get('fps', 0):.0f} images/s", GREEN if s.get("fps", 0) >= 24 else ORANGE)
+            self._set("face", tr("perdu (valeur maintenue)"), RED)
+        self._set("camera", tr("{fps} images/s", fps=f"{s.get('fps', 0):.0f}"), GREEN if s.get("fps", 0) >= 24 else ORANGE)
         hz, gap = s.get("send_hz", 0.0), s.get("gap_ms", 0.0)
         if s.get("opentrack_running") is False:  # None : inconnu (OpenTrack sur un autre PC)
-            self._set("opentrack", "fermé : bouton « Ouvrir OpenTrack »", ORANGE)
+            self._set("opentrack", tr("fermé : bouton « Ouvrir OpenTrack »"), ORANGE)
         elif hz > 0:
-            self._set("opentrack", f"{hz:.0f} envois/s, plus long trou {gap:.0f} ms",
+            self._set("opentrack", tr("{hz} envois/s, plus long trou {gap} ms", hz=f"{hz:.0f}", gap=f"{gap:.0f}"),
                       GREEN if gap <= 20 else ORANGE)
         else:
-            self._set("opentrack", "en attente du visage", GREY)
-        self._set("gaze", "actif" if s.get("gaze_enabled") else "coupé", GREEN if s.get("gaze_enabled") else GREY)
+            self._set("opentrack", tr("en attente du visage"), GREY)
+        self._set("gaze", tr("actif") if s.get("gaze_enabled") else tr("coupé"), GREEN if s.get("gaze_enabled") else GREY)
         glare, glare_lbl = s.get("glare", 0.0), s.get("glare_label", "aucun")
         if not s.get("face"):
             self._set("glare", "—", GREY)
         else:
-            advice = " : bougez la lampe ou l'écran" if glare_lbl == "gênant" else ""
-            self._set("glare", f"{glare_lbl} ({glare * 100:.0f} % de l'iris){advice}",
+            advice = tr(" : bougez la lampe ou l'écran") if glare_lbl == "gênant" else ""
+            self._set("glare", tr("{label} ({pct} % de l'iris){advice}", label=tr(glare_lbl),
+                                  pct=f"{glare * 100:.0f}", advice=advice),
                       {"aucun": GREEN, "léger": ORANGE}.get(glare_lbl, RED))
         rls = s.get("rls", 0)
         if s.get("calibrated"):
             q, qdeg = s.get("calib_quality", "inconnue"), s.get("calib_deg", float("nan"))
-            text = "calibré" if q == "inconnue" else f"qualité {q} ({qdeg:.1f}°)"
+            text = tr("calibré") if q == "inconnue" else tr("qualité {q} ({deg}°)", q=tr(q), deg=f"{qdeg:.1f}")
             if rls:
-                text += f", +{rls} clics"
+                text += tr(", +{n} clics", n=rls)
             self._set("calib", text, {"bonne": GREEN, "inconnue": GREEN, "moyenne": ORANGE}.get(q, RED))
         else:
-            self._set("calib", "non calibré : bouton « Calibrer le regard »", RED)
-        self._set("mode", "PAUSE : au centre" if s.get("paused") else "suit la tête",
+            self._set("calib", tr("non calibré : bouton « Calibrer le regard »"), RED)
+        self._set("mode", tr("PAUSE : au centre") if s.get("paused") else tr("suit la tête"),
                   ORANGE if s.get("paused") else GREEN)
-        self._buttons["pause"].config(text="Reprendre" if s.get("paused") else "Pause")
-        self._buttons["gaze"].config(text="Réactiver le regard" if not s.get("gaze_enabled") else "Couper le regard")
-        self._buttons["overlay"].config(text="Masquer l'overlay" if s.get("overlay") else "Afficher l'overlay")
+        self._buttons["pause"].config(text=tr("Reprendre") if s.get("paused") else tr("Pause"))
+        self._buttons["gaze"].config(text=tr("Réactiver le regard") if not s.get("gaze_enabled") else tr("Couper le regard"))
+        self._buttons["overlay"].config(text=tr("Masquer l'overlay") if s.get("overlay") else tr("Afficher l'overlay"))
         hint = s.get("hotkey_hint", "")
         if self._hint.cget("text") != hint:
             self._hint.config(text=hint)
@@ -471,5 +490,7 @@ class ControlPanel:
             for key, var in self._app_checks.items():
                 if key in app:
                     var.set(bool(app[key]))
+            if self._language_box is not None and app.get("language") in CHOICES:
+                self._language_box.current(CHOICES.index(app["language"]))
         finally:
             self._updating = False

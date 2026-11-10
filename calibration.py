@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 from face import GLARE_STRONG, glare_on_iris
 from geometry import ScreenConfig
+from i18n import tr
 from paths import data_path
 import winapp
 
@@ -282,10 +283,11 @@ def draw_review(screen_config: ScreenConfig, points: list[dict], errs: list[floa
     img = np.zeros((h, w, 3), dtype=np.uint8)
     label = quality_label(mean_deg, len(points))
     color = {"bonne": (60, 200, 60), "moyenne": (0, 165, 255)}.get(label, (60, 60, 230))
-    ascii_label = {"bonne": "BONNE", "moyenne": "MOYENNE", "à refaire": "A REFAIRE"}.get(label, label.upper())
-    title = f"Calibration terminee - qualite : {ascii_label} (erreur moyenne {mean_deg:.1f} deg)"
+    ascii_label = tr({"bonne": "BONNE", "moyenne": "MOYENNE", "à refaire": "A REFAIRE"}.get(label, "?"))
+    title = tr("Calibration terminee - qualite : {label} (erreur moyenne {deg} deg)",
+               label=ascii_label, deg=f"{mean_deg:.1f}")
     cv2.putText(img, title, (w // 2 - 430, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.95, color, 2)
-    cv2.putText(img, "Cercle : cible ; croix : ou le regard a ete estime (chaque point predit sans lui)",
+    cv2.putText(img, tr("Cercle : cible ; croix : ou le regard a ete estime (chaque point predit sans lui)"),
                 (w // 2 - 430, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (190, 190, 190), 1)
 
     states = classify_points(errs)
@@ -300,20 +302,22 @@ def draw_review(screen_config: ScreenConfig, points: list[dict], errs: list[floa
         cv2.putText(img, f"{i + 1}", (tx - 7, ty + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1)
         cv2.putText(img, f"{e:.1f} deg", (tx + 24, ty - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.55, c, 1)
         if p.get("glare", 0.0) > GLARE_STRONG:
-            cv2.putText(img, "reflet", (tx + 24, ty + 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (60, 60, 230), 1)
+            cv2.putText(img, tr("reflet"), (tx + 24, ty + 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (60, 60, 230), 1)
 
     glare = [p.get("glare", 0.0) for p in points]
     redo = points_to_redo(errs, glare)
     flagged = any(c == "bad" for c in states) or any(g > GLARE_STRONG for g in glare)
-    redo_txt = (f"[R] Refaire les points {', '.join(str(i + 1) for i in redo)} (rouges ou avec reflet)" if flagged
-                else f"[R] Refaire le moins bon point ({redo[0] + 1})")
-    lines = ["[Entree] Valider", redo_txt, "[Echap] Annuler (garder l'ancienne calibration)"]
+    redo_txt = (tr("[R] Refaire les points {pts} (rouges ou avec reflet)", pts=", ".join(str(i + 1) for i in redo))
+                if flagged else tr("[R] Refaire le moins bon point ({n})", n=redo[0] + 1))
+    lines = [tr("[Entree] Valider"), redo_txt, tr("[Echap] Annuler (garder l'ancienne calibration)")]
     if len(points) < 9:
-        lines.insert(0, "5 points : note approximative (9 points conseilles)")
+        lines.insert(0, tr("5 points : note approximative (9 points conseilles)"))
     glare_pts = [i + 1 for i, g in enumerate(glare) if g > GLARE_STRONG]
+    warning = ""
     if glare_pts:
-        lines.insert(0, f"Reflets sur les lunettes aux points {', '.join(map(str, glare_pts))} : "
-                        "deplacez la lampe ou inclinez l'ecran avant de les refaire")
+        warning = tr("Reflets sur les lunettes aux points {pts} : deplacez la lampe ou inclinez l'ecran avant de "
+                     "les refaire", pts=", ".join(map(str, glare_pts)))
+        lines.insert(0, warning)
     # Consignes dans la bande libre entre la rangée du milieu et celle du bas (cibles à 50 % et
     # 90 % de la hauteur), sur un fond sombre pour rester lisibles par-dessus les traits.
     line_h = 34
@@ -322,7 +326,7 @@ def draw_review(screen_config: ScreenConfig, points: list[dict], errs: list[floa
     x0 = max(20, w // 2 - text_w // 2)
     cv2.rectangle(img, (x0 - 20, y0 - 30), (x0 + text_w + 20, y0 + line_h * (len(lines) - 1) + 16), (25, 25, 25), -1)
     for k, line in enumerate(lines):
-        col = (60, 60, 230) if line.startswith("Reflets") else (230, 230, 230)
+        col = (60, 60, 230) if warning and line == warning else (230, 230, 230)
         cv2.putText(img, line, (x0, y0 + line_h * k), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 1)
     return img
 
@@ -346,13 +350,13 @@ def draw_intro(w: int, h: int, frame: np.ndarray | None, face_detected: bool, gl
         cv2.putText(img, text, (x0 if x is None else x, int(y)), font, size * sc, color,
                     max(1, round(thick * sc)), cv2.LINE_AA)
 
-    put("Bienvenue dans Eyetrack", 110, 1.4, (0, 200, 255), 3)
-    put("Premiere utilisation : on calibre votre regard (environ 1 minute)", 55, 0.8, (230, 230, 230), 2)
+    put(tr("Bienvenue dans Eyetrack"), 110, 1.4, (0, 200, 255), 3)
+    put(tr("Premiere utilisation : on calibre votre regard (environ 1 minute)"), 55, 0.8, (230, 230, 230), 2)
     steps = [
-        "1. Installez-vous comme pour jouer, face a la camera (gardez vos lunettes si vous en portez).",
-        f"2. Un repere orange apparait a {num_points} endroits : fixez-le jusqu'a ce qu'il change de place.",
-        "3. Bougez doucement la tete en le fixant : le regard est appris dans toutes les positions.",
-        "4. A la fin, une note s'affiche : [Entree] valide, [R] refait les points rates.",
+        tr("1. Installez-vous comme pour jouer, face a la camera (gardez vos lunettes si vous en portez)."),
+        tr("2. Un repere orange apparait a {n} endroits : fixez-le jusqu'a ce qu'il change de place.", n=num_points),
+        tr("3. Bougez doucement la tete en le fixant : le regard est appris dans toutes les positions."),
+        tr("4. A la fin, une note s'affiche : [Entree] valide, [R] refait les points rates."),
     ]
     for k, line in enumerate(steps):
         put(line, 60 if k == 0 else 42, 0.65, (210, 210, 210))
@@ -365,16 +369,17 @@ def draw_intro(w: int, h: int, frame: np.ndarray | None, face_detected: bool, gl
     if frame is not None and y_cam + cam_h < h:
         img[y_cam:y_cam + cam_h, x0:x0 + cam_w] = cv2.resize(frame, (cam_w, cam_h))
     cv2.rectangle(img, (x0 - 3, y_cam - 3), (x0 + cam_w + 2, y_cam + cam_h + 2), color, max(2, round(3 * sc)))
-    status = "Visage detecte" if face_detected else "Visage non detecte : placez-vous face a la camera"
+    status = tr("Visage detecte") if face_detected else tr("Visage non detecte : placez-vous face a la camera")
     sx = x0 + cam_w + int(30 * sc)
     y = float(y_cam)
     put(status, 30, 0.75, color, 2, x=sx)
     if glare > GLARE_STRONG:
-        put("Reflet sur les lunettes : deplacez la lampe ou inclinez un peu l'ecran", 40, 0.6, (60, 60, 230), 1, x=sx)
+        put(tr("Reflet sur les lunettes : deplacez la lampe ou inclinez un peu l'ecran"), 40, 0.6, (60, 60, 230), 1,
+            x=sx)
 
     y = float(y_cam + cam_h)
-    put("[Entree] Commencer la calibration", 75, 0.95, (60, 200, 60), 2)
-    put("[Echap] Plus tard (bouton \"Calibrer le regard\" du panneau)", 45, 0.7, (190, 190, 190))
+    put(tr("[Entree] Commencer la calibration"), 75, 0.95, (60, 200, 60), 2)
+    put(tr("[Echap] Plus tard (bouton \"Calibrer le regard\" du panneau)"), 45, 0.7, (190, 190, 190))
     return img
 
 
@@ -460,7 +465,7 @@ class CalibrationManager:
         w = self.screen_config.width_px
         h = self.screen_config.height_px
 
-        window_name = "Calibration Personnelle (ESC pour annuler)"
+        window_name = tr("Calibration (Echap pour annuler)")
         open_calibration_window(window_name, w, h)
 
         from gaze_model import IrisGazeEstimator
@@ -597,15 +602,15 @@ class CalibrationManager:
             progress = len(point_G) / float(samples_per_point)
             radius = int(24 + 8 * math.sin(frames_seen * 0.25))
 
-            msg1 = f"Point {pt_idx + 1}/{total_points} - Fixez le repere orange"
-            msg2 = "Conseil : bougez doucement la tete (inclinaison / rotation) en fixant la cible"
+            msg1 = tr("Point {i}/{n} - Fixez le repere orange", i=pt_idx + 1, n=total_points)
+            msg2 = tr("Conseil : bougez doucement la tete (inclinaison / rotation) en fixant la cible")
             cv2.putText(calib_screen, msg1, (w // 2 - 280, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (220, 220, 220), 2)
             cv2.putText(calib_screen, msg2, (w // 2 - 420, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 200, 255), 1)
             if glare_live > GLARE_STRONG:
-                cv2.putText(calib_screen, "Reflet sur les lunettes : deplacez la lampe ou inclinez un peu l'ecran",
+                cv2.putText(calib_screen, tr("Reflet sur les lunettes : deplacez la lampe ou inclinez un peu l'ecran"),
                             (w // 2 - 440, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (60, 60, 240), 2)
             if not face_data.detected and frames_seen > settle_frames:
-                cv2.putText(calib_screen, "Visage non detecte : restez face a la camera",
+                cv2.putText(calib_screen, tr("Visage non detecte : restez face a la camera"),
                             (w // 2 - 290, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (60, 60, 240), 2)
 
             cv2.circle(calib_screen, (target_x, target_y), radius, (0, 140, 255), 2)
@@ -629,7 +634,7 @@ class CalibrationManager:
                 dot_x = int(bx + np.clip(hy * 2.0, -35, 35))
                 dot_y = int(by + np.clip(hp * 2.0, -35, 35))
                 cv2.circle(calib_screen, (dot_x, dot_y), 5, (0, 255, 0) if head_varied else (0, 165, 255), -1)
-                cv2.putText(calib_screen, "Tete", (bx - 15, by + 55), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
+                cv2.putText(calib_screen, tr("Tete"), (bx - 15, by + 55), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
 
             cv2.imshow(ctx["window"], calib_screen)
             key = cv2.waitKey(1) & 0xFF

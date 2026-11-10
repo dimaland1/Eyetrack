@@ -6,7 +6,9 @@ Lancé depuis les sources (python main.py) :
 - profiles/ : profils de jeux (versionnés)
 
 Lancé depuis l'exécutable (Eyetrack.exe, PyInstaller) :
-- modèles, icône et profils de référence sont dans le paquet (lecture seule) ;
+- modèle du visage, icône et profils de référence sont dans le paquet (lecture seule) ;
+- le modèle de regard de précision n'est PAS fourni (licence non commerciale d'un tiers) :
+  l'utilisateur le télécharge lui-même (installeur ou panneau) dans %LOCALAPPDATA%\\Eyetrack\\models ;
 - données et profils de l'utilisateur sont dans %LOCALAPPDATA%\\Eyetrack : mettre à jour ou
   réinstaller l'exécutable ne les efface jamais, et ils restent séparés de ceux des sources
   (on peut développer une nouvelle version sans toucher à la calibration du jeu).
@@ -27,6 +29,7 @@ if FROZEN:
     USER_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "Eyetrack"
     ROOT = BUNDLE_DIR
     MODELS_DIR = BUNDLE_DIR / "models"
+    USER_MODELS_DIR = USER_DIR / "models"
     DATA_DIR = USER_DIR / "data"
     PROFILES_DIR = USER_DIR / "profiles"
     DEFAULT_PROFILES_DIR = BUNDLE_DIR / "profiles"
@@ -36,6 +39,7 @@ else:
     BUNDLE_DIR = ROOT
     USER_DIR = ROOT
     MODELS_DIR = ROOT / "models"
+    USER_MODELS_DIR = MODELS_DIR
     DATA_DIR = ROOT / "data"
     PROFILES_DIR = ROOT / "profiles"
     DEFAULT_PROFILES_DIR = PROFILES_DIR

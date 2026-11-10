@@ -23,11 +23,13 @@ echo.
 echo   Installation
 echo     8. Installer OpenTrack          (winget)
 echo     E. Construire / mettre a jour Eyetrack.exe (raccourci sur le Bureau)
+echo     I. Construire l'installeur      (dist\installer\Eyetrack-Setup.exe, a donner)
 echo.
 echo     Q. Quitter
 echo.
-choice /c 123456789EQ /n /m "Votre choix : "
-if errorlevel 11 goto :eof
+choice /c 123456789EIQ /n /m "Votre choix : "
+if errorlevel 12 goto :eof
+if errorlevel 11 goto setup
 if errorlevel 10 goto exe
 if errorlevel 9 goto tests
 if errorlevel 8 goto install
@@ -80,6 +82,10 @@ goto fin
 
 :exe
 python tools\build_exe.py
+goto fin
+
+:setup
+python tools\build_exe.py --installer
 goto fin
 
 :install

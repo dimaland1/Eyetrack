@@ -33,7 +33,10 @@ LOCAL = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
 APP_DIR = LOCAL / "Programs" / "Eyetrack"
 USER_DIR = LOCAL / "Eyetrack"
 DIST_DIR = ROOT / "dist" / "Eyetrack"
-MODELS = ["face_landmarker.task", "mobileone_s0_gaze.onnx"]
+MODELS = ["face_landmarker.task"]  # fournis dans le paquet (Apache 2.0)
+# Modèle de regard de précision : licence non commerciale d'un tiers, jamais dans le paquet ni
+# l'installeur. Sert seulement à l'auto-test, et copié pour l'utilisateur de CE PC (sa copie).
+GAZE_MODEL = ROOT / "models" / "mobileone_s0_gaze.onnx"
 DATA_TO_COPY = ["calibration_*.npz", "calibration_samples_*.npz", "camera_mode.json", "app_settings.json"]
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 
@@ -105,7 +108,9 @@ def self_test(exe: Path) -> None:
     """Lance « Eyetrack.exe --self-test » : arrêt (sans rien installer) si le paquet est cassé."""
     log = USER_DIR / "eyetrack.selftest.log"
     print("Auto-test de l'exécutable (modèles, MediaPipe, interface)…")
-    p = subprocess.Popen([str(exe), "--self-test"], cwd=exe.parent)
+    # Modèle de précision passé à part (pas dans le paquet) : ONNX Runtime vérifié avec le vrai modèle
+    extra = ["--gaze-model", str(GAZE_MODEL)] if GAZE_MODEL.is_file() else []
+    p = subprocess.Popen([str(exe), "--self-test", *extra], cwd=exe.parent)
     # L'auto-test n'ouvre aucune fenêtre : une fenêtre visible = message d'erreur du lanceur
     deadline = time.monotonic() + 120
     while p.poll() is None:
@@ -142,7 +147,8 @@ def copy_user_data() -> None:
     """Première installation : reprend la calibration et les profils des sources (sans écraser)."""
     copied = []
     for pattern, src_dir, dst_dir in [(p, ROOT / "data", USER_DIR / "data") for p in DATA_TO_COPY] + \
-                                     [("*.json", ROOT / "profiles", USER_DIR / "profiles")]:
+                                     [("*.json", ROOT / "profiles", USER_DIR / "profiles"),
+                                      (GAZE_MODEL.name, GAZE_MODEL.parent, USER_DIR / "models")]:
         for src in sorted(src_dir.glob(pattern)):
             dst = dst_dir / src.name
             if not dst.exists():
@@ -176,16 +182,42 @@ def create_shortcuts() -> None:
         print(f"Raccourci : {line.strip()}")
 
 
+ISCC_CANDIDATES = [LOCAL / "Programs" / "Inno Setup 6" / "ISCC.exe",
+                   Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Inno Setup 6" / "ISCC.exe",
+                   Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Inno Setup 6" / "ISCC.exe"]
+INSTALLER = ROOT / "dist" / "installer" / "Eyetrack-Setup.exe"
+
+
+def build_installer() -> None:
+    """Installeur Eyetrack-Setup.exe (Inno Setup) à partir de la construction testée de dist/."""
+    iscc = next((p for p in ISCC_CANDIDATES if p.is_file()), None)
+    if iscc is None:
+        sys.exit("Inno Setup 6 introuvable. Installation (gratuite, sans droits administrateur) : "
+                 "winget install --id JRSoftware.InnoSetup -e --source winget --scope user")
+    version = time.strftime("%Y.%m.%d") + "-" + (git("rev-parse", "--short", "HEAD") or "dev")
+    print(f"Compilation de l'installeur (version {version})…")
+    cmd = [str(iscc), "/Qp", f"/DAppVersion={version}", f"/DSourceDir={DIST_DIR}",
+           str(ROOT / "installer" / "eyetrack.iss")]
+    if subprocess.run(cmd, cwd=ROOT / "installer").returncode != 0 or not INSTALLER.is_file():
+        sys.exit("Échec de la compilation de l'installeur (voir les messages ci-dessus).")
+    print(f"Installeur : {INSTALLER} ({INSTALLER.stat().st_size / 1e6:.0f} Mo)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Construit et installe Eyetrack.exe")
     parser.add_argument("--build-only", action="store_true", help="Construire sans installer")
     parser.add_argument("--install-only", action="store_true", help="Installer la dernière construction (dist/)")
+    parser.add_argument("--installer", action="store_true",
+                        help="Construire l'installeur Eyetrack-Setup.exe (à donner), sans installer sur ce PC")
     args = parser.parse_args()
     if not args.install_only:
         build()
     elif not (DIST_DIR / "Eyetrack.exe").is_file():
         sys.exit(f"Aucune construction dans {DIST_DIR} : lancez d'abord sans --install-only.")
     self_test(DIST_DIR / "Eyetrack.exe")
+    if args.installer:
+        build_installer()
+        return
     if args.build_only:
         return
     install_program()

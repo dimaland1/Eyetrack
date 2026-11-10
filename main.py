@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import sys
+import threading
 import time
 import cv2
 import numpy as np
@@ -22,7 +23,7 @@ import numpy as np
 from capture import WebcamCapture
 from face import FaceDetector
 from normalize import FaceNormalizer
-from gaze_model import create_gaze_estimator
+from gaze_model import MODEL_SOURCE, create_gaze_estimator, download_gaze_model, gaze_model_available, gaze_model_path
 from geometry import ScreenConfig, get_screen_resolution
 from calibration import CalibrationManager
 from filters import OneEuroFilter, LossBlender, BlinkDetector
@@ -155,6 +156,16 @@ def main() -> None:
     args, current_profile = parse_arguments()
     app_cfg = app_settings.update(last_profile=current_profile.name)  # repris au prochain lancement
     i18n.set_language(app_cfg["language"])  # "auto" : langue de Windows
+
+    # Modèle de regard de précision : jamais fourni (licence non commerciale d'un tiers), l'utilisateur
+    # le télécharge lui-même. Absent -> mode simple (iris) et bouton « Modèle de précision » du panneau.
+    gaze_model_state = "precise" if args.gaze_mode == "net" else "simple"
+    if args.gaze_mode == "net" and not gaze_model_available():
+        print(f"[main] Modèle de regard de précision absent ({gaze_model_path()}) : mode simple (iris). "
+              "Bouton « Modèle de précision » du panneau pour le télécharger.")
+        args.gaze_mode = "iris"
+        gaze_model_state = "missing"
+    model_download: dict = {}  # résultat du téléchargement en cours ("ok" ou "error")
     available_profiles = list_profiles()
     current_prof_idx = (
         available_profiles.index(current_profile.name)
@@ -657,6 +668,7 @@ def main() -> None:
                     "diag": diag_text, "glare": glare_level, "glare_label": glare_label(glare_level),
                     "calib_quality": calibration_mgr.quality_label, "calib_deg": calibration_mgr.quality_deg,
                     "opentrack_running": opentrack_running,
+                    "gaze_model": gaze_model_state, "model_source": MODEL_SOURCE,
                     "app_settings": {"launch_opentrack": app_cfg["launch_opentrack"],
                                      "language": app_cfg["language"]},
                 }
@@ -753,6 +765,19 @@ def main() -> None:
                     panel.toggle_visible()
                 elif action == "show_panel" and panel is not None:  # Eyetrack relancé alors qu'il tourne
                     panel.show()
+                elif action == "download_model" and gaze_model_state in ("missing", "error"):
+                    # Accord de licence donné dans le panneau : téléchargement en arrière-plan
+                    gaze_model_state = "downloading"
+                    model_download.clear()
+
+                    def fetch_model(result: dict = model_download) -> None:
+                        try:
+                            result["ok"] = download_gaze_model()
+                        except Exception as e:
+                            result["error"] = f"{type(e).__name__} : {e}"
+
+                    print("[main] Téléchargement du modèle de regard de précision (accord donné dans le panneau)…")
+                    threading.Thread(target=fetch_model, name="telechargement-modele", daemon=True).start()
                 elif action == "opentrack":
                     result = winapp.launch_opentrack(app_cfg["opentrack_path"])
                     print(f"[opentrack] {result}")
@@ -770,6 +795,22 @@ def main() -> None:
             if quit_requested:
                 print("[main] Arrêt demandé par l'utilisateur.")
                 break
+            if gaze_model_state == "downloading" and model_download:
+                if "ok" in model_download:
+                    gaze_model_state = "downloaded"
+                    print(f"[main] Modèle de précision installé : {model_download['ok']} (pris en compte au "
+                          "prochain lancement)")
+                    if tray is not None:
+                        tray.notify(tr("Modèle de précision installé"),
+                                    tr("Quittez puis relancez Eyetrack pour l'utiliser : une nouvelle calibration "
+                                       "vous sera proposée."))
+                else:
+                    gaze_model_state = "error"
+                    print(f"[main] Échec du téléchargement du modèle : {model_download.get('error')}")
+                    if tray is not None:
+                        tray.notify(tr("Téléchargement impossible"),
+                                    tr("Le modèle de précision n'a pas pu être téléchargé. Vérifiez la connexion "
+                                       "puis réessayez depuis le panneau."))
 
             if tray is not None:
                 tray.paused, tray.gaze_enabled = sender.paused, gaze_enabled

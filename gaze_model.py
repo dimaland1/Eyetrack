@@ -8,6 +8,7 @@ Implémente deux approches interchangeables :
 
 from __future__ import annotations
 from dataclasses import dataclass, field
+import hashlib
 import os
 import urllib.request
 import cv2
@@ -16,11 +17,50 @@ import onnxruntime as ort
 
 from face import FaceData, LEFT_IMAGE_EYE, RIGHT_IMAGE_EYE
 from normalize import NormalizationData
-from paths import model_path as _model_path
+from paths import USER_MODELS_DIR
 
-# Poids pré-entraînés (yakhyo/gaze-estimation, entraînés sur Gaze360 : usage non commercial)
+# Poids pré-entraînés (yakhyo/gaze-estimation, entraînés sur Gaze360 : usage non commercial).
+# Jamais fournis avec Eyetrack : l'utilisateur les télécharge lui-même depuis la source officielle,
+# après avoir accepté leur licence (installeur ou bouton du panneau). Sans eux : mode 'iris'.
 MODEL_FILE = "mobileone_s0_gaze.onnx"
 MODEL_URL = "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx"
+MODEL_SOURCE = "https://github.com/yakhyo/gaze-estimation"
+# Empreinte du fichier attendu : un fichier modifié ou corrompu est refusé
+MODEL_SHA256 = "8b4fdc4e3da44733c9a82e7776b411e4a39f94e8e285aee0fc85a548a55f7d9f"
+
+
+def gaze_model_path() -> str:
+    """Emplacement du modèle de précision (dossier de l'utilisateur, pas le paquet)."""
+    return str(USER_MODELS_DIR / MODEL_FILE)
+
+
+def gaze_model_available() -> bool:
+    return os.path.isfile(gaze_model_path())
+
+
+def download_gaze_model(dest: str | None = None, url: str = MODEL_URL, sha256: str = MODEL_SHA256,
+                        timeout: float = 30.0) -> str:
+    """Télécharge le modèle depuis sa source officielle (à appeler seulement après l'accord de
+    l'utilisateur sur sa licence). Vérifie l'empreinte SHA-256 avant de le mettre en place."""
+    dest = dest or gaze_model_path()
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    part = dest + ".part"
+    digest = hashlib.sha256()
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp, open(part, "wb") as f:
+            while True:
+                chunk = resp.read(1 << 16)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                f.write(chunk)
+        if digest.hexdigest().lower() != sha256.lower():
+            raise ValueError("fichier reçu différent du modèle attendu (empreinte SHA-256)")
+        os.replace(part, dest)
+    finally:
+        if os.path.exists(part):
+            os.remove(part)
+    return dest
 
 
 @dataclass
@@ -107,11 +147,12 @@ class NetGazeEstimator:
         """Initialise la session ONNX Runtime.
 
         Args:
-            model_path: Chemin du fichier ONNX (défaut : models/mobileone_s0_gaze.onnx,
-                téléchargé si absent).
+            model_path: Chemin du fichier ONNX (défaut : gaze_model_path()). Jamais téléchargé
+                automatiquement : FileNotFoundError s'il est absent.
         """
-        self.model_path = model_path or _model_path(MODEL_FILE)
-        self._ensure_model_exists()
+        self.model_path = model_path or gaze_model_path()
+        if not os.path.isfile(self.model_path):
+            raise FileNotFoundError(f"Modèle de regard absent : {self.model_path}")
         self._iris = IrisGazeEstimator()
 
         # Initialisation session ONNX Runtime sur CPU (ultra-rapide avec AVX2)
@@ -134,13 +175,6 @@ class NetGazeEstimator:
         # Normalisation ImageNet standard
         self.mean = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 1, 3)
         self.std = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 1, 3)
-
-    def _ensure_model_exists(self) -> None:
-        """Vérifie la présence du modèle ONNX et le télécharge si nécessaire."""
-        if not os.path.exists(self.model_path):
-            print(f"[gaze_model] Modèle absent, téléchargement depuis {MODEL_URL} ...")
-            urllib.request.urlretrieve(MODEL_URL, self.model_path)
-            print("[gaze_model] Modèle téléchargé.")
 
     def _softmax(self, x: np.ndarray) -> np.ndarray:
         """Calcule le softmax numériquement stable sur l'axe 1."""

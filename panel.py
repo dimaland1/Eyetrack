@@ -18,7 +18,7 @@ from __future__ import annotations
 import queue
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 import cv2
 import numpy as np
@@ -242,6 +242,11 @@ class ControlPanel:
         self._buttons["opentrack"] = ttk.Button(cmd, text=tr("Ouvrir OpenTrack"), width=19,
                                                 command=lambda: self._send("action", "opentrack"))
         self._buttons["opentrack"].grid(row=2, column=0, padx=4, pady=3)
+        # Modèle de précision absent : bouton affiché seulement dans ce cas (accord de licence demandé)
+        self._buttons["model"] = ttk.Button(cmd, text=tr("Modèle de précision…"), width=19,
+                                            command=self._ask_model_download)
+        self._buttons["model"].grid(row=2, column=1, padx=4, pady=3)
+        self._buttons["model"].grid_remove()
         self._buttons["quit"] = ttk.Button(cmd, text=tr("Quitter"), width=19, command=lambda: self._send("action", "quit"))
         self._buttons["quit"].grid(row=2, column=2, padx=4, pady=3)
 
@@ -359,6 +364,19 @@ class ControlPanel:
         if not self._updating:
             self._send("app", key, bool(var.get()))
 
+    def _ask_model_download(self) -> None:
+        """Accord de l'utilisateur sur la licence du modèle (tiers, non commercial) avant de le télécharger."""
+        ok = messagebox.askyesno(
+            tr("Modèle de regard de précision"),
+            tr("Le modèle de regard de précision (MobileOne-S0, entraîné sur le jeu de données Gaze360) n'est pas "
+               "fourni avec Eyetrack : il appartient à un tiers et sa licence n'autorise qu'un usage non "
+               "commercial.\n\nEyetrack peut le télécharger pour vous depuis sa source officielle :\n{source}\n\n"
+               "En acceptant, vous déclarez l'utiliser à titre personnel et non commercial, conformément à sa "
+               "licence. Télécharger maintenant (5 Mo) ?", source=self._status.get("model_source", "")),
+            parent=self._root)
+        if ok:
+            self._send("action", "download_model")
+
     def _toggle_preview(self) -> None:
         self.preview_enabled = not self.preview_enabled
         if self.preview_enabled:
@@ -424,7 +442,19 @@ class ControlPanel:
                       GREEN if gap <= 20 else ORANGE)
         else:
             self._set("opentrack", tr("en attente du visage"), GREY)
-        self._set("gaze", tr("actif") if s.get("gaze_enabled") else tr("coupé"), GREEN if s.get("gaze_enabled") else GREY)
+        gm = s.get("gaze_model", "precise")
+        extra = {"simple": tr(" - mode simple"), "missing": tr(" - mode simple (sans modèle)"),
+                 "downloading": tr(" - téléchargement…"), "downloaded": tr(" - relancez Eyetrack"),
+                 "error": tr(" - échec, réessayez")}.get(gm, "")
+        on = s.get("gaze_enabled")
+        self._set("gaze", (tr("actif") if on else tr("coupé")) + extra,
+                  ORANGE if gm in ("missing", "error", "downloaded") else (GREEN if on else GREY))
+        model_btn = self._buttons["model"]
+        if (gm in ("missing", "error")) != bool(model_btn.winfo_manager()):  # "" = masqué
+            if gm in ("missing", "error"):
+                model_btn.grid()
+            else:
+                model_btn.grid_remove()
         glare, glare_lbl = s.get("glare", 0.0), s.get("glare_label", "aucun")
         if not s.get("face"):
             self._set("glare", "—", GREY)

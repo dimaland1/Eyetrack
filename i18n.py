@@ -122,6 +122,30 @@ EN: dict[str, str] = {
     "clic droit pour quitter.":
         "Tracking continues in the background. Click the Eyetrack icon to reopen the panel; "
         "right-click to quit.",
+    # ------------------------------------------------------------------ modèle de regard de précision
+    "Modèle de précision…": "Precision model…",
+    "Modèle de regard de précision": "Precision gaze model",
+    "Le modèle de regard de précision (MobileOne-S0, entraîné sur le jeu de données Gaze360) n'est pas "
+    "fourni avec Eyetrack : il appartient à un tiers et sa licence n'autorise qu'un usage non "
+    "commercial.\n\nEyetrack peut le télécharger pour vous depuis sa source officielle :\n{source}\n\n"
+    "En acceptant, vous déclarez l'utiliser à titre personnel et non commercial, conformément à sa "
+    "licence. Télécharger maintenant (5 Mo) ?":
+        "The precision gaze model (MobileOne-S0, trained on the Gaze360 dataset) is not included with "
+        "Eyetrack: it belongs to a third party and its license only allows non-commercial use.\n\n"
+        "Eyetrack can download it for you from its official source:\n{source}\n\n"
+        "By accepting, you state that you will use it for personal, non-commercial purposes, as its "
+        "license requires. Download it now (5 MB)?",
+    " - mode simple": " - simple mode",
+    " - mode simple (sans modèle)": " - simple mode (no model)",
+    " - téléchargement…": " - downloading…",
+    " - relancez Eyetrack": " - restart Eyetrack",
+    " - échec, réessayez": " - failed, try again",
+    "Modèle de précision installé": "Precision model installed",
+    "Quittez puis relancez Eyetrack pour l'utiliser : une nouvelle calibration vous sera proposée.":
+        "Quit and restart Eyetrack to use it: a new calibration will be offered.",
+    "Téléchargement impossible": "Download failed",
+    "Le modèle de précision n'a pas pu être téléchargé. Vérifiez la connexion puis réessayez depuis le panneau.":
+        "The precision model could not be downloaded. Check your connection and try again from the panel.",
     # ------------------------------------------------------------------ fenêtres d'erreur
     "Eyetrack - caméra introuvable": "Eyetrack - camera not found",
     "Impossible d'ouvrir la caméra (n° {n}).\n\n{err}\n\nVérifiez qu'elle est branchée et qu'aucune "

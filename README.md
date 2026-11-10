@@ -9,9 +9,28 @@ Suivi de la tête et du regard avec une simple webcam, envoyé à OpenTrack (pro
 pip install -r requirements.txt
 ```
 
-Les modèles (`models/`) sont téléchargés automatiquement au premier lancement.
+Le modèle du visage (MediaPipe, `models/`) est téléchargé automatiquement au premier lancement.
+Le **modèle de regard de précision** (licence non commerciale d'un tiers) ne l'est jamais sans
+accord : bouton « Modèle de précision… » du panneau (sans lui, Eyetrack tourne en mode simple).
 OpenTrack s'installe depuis le menu (option 8) ou avec
 `winget install --id opentrack.opentrack -e`.
+
+### Installeur à donner : `Eyetrack-Setup.exe`
+
+Option **I** du menu `Eyetrack.bat` (ou `python tools/build_exe.py --installer`) : construit
+l'exécutable, le soumet à l'auto-test puis compile `dist\installer\Eyetrack-Setup.exe` avec
+[Inno Setup 6](https://jrsoftware.org/isinfo.php) (gratuit ; `winget install --id
+JRSoftware.InnoSetup -e --scope user`). Script : `installer/eyetrack.iss`. L'installeur :
+
+- s'installe pour l'utilisateur, **sans droits administrateur**, en français ou en anglais (la
+  langue choisie devient celle d'Eyetrack) ; raccourcis menu Démarrer et Bureau ;
+- propose **OpenTrack** s'il n'est pas installé (winget ; Windows demande alors une autorisation) ;
+- propose le **modèle de regard de précision**, case décochée : il n'est **pas inclus** (licence
+  non commerciale d'un tiers) ; en cochant, l'utilisateur accepte sa licence et l'installeur le
+  télécharge depuis sa source officielle, empreinte SHA-256 vérifiée. Installation silencieuse :
+  `/VERYSILENT /DOWNLOADMODEL=1` ;
+- refuse de s'installer pendant qu'Eyetrack tourne ; la désinstallation (« Applications
+  installées ») garde la calibration et les réglages, sauf si l'utilisateur demande de les effacer.
 
 ## Lancement
 
@@ -253,4 +272,8 @@ Ensuite :
 ## Licences
 
 Le modèle de regard (`mobileone_s0_gaze.onnx`, projet yakhyo/gaze-estimation) est entraîné
-sur Gaze360 : usage **non commercial**. MediaPipe est sous licence Apache 2.0.
+sur Gaze360 : usage **non commercial**. Il n'est donc **jamais fourni** avec Eyetrack (ni dans
+l'exécutable, ni dans l'installeur) : l'utilisateur le télécharge lui-même depuis sa source
+officielle, après avoir accepté sa licence (installeur ou panneau), dans
+`%LOCALAPPDATA%\Eyetrack\models`. Sans lui, Eyetrack fonctionne en mode simple (MediaPipe
+seul). MediaPipe est sous licence Apache 2.0.

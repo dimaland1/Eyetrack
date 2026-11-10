@@ -12,7 +12,6 @@ ROOT = Path(SPECPATH)
 
 datas = [
     (str(ROOT / "models" / "face_landmarker.task"), "models"),
-    (str(ROOT / "models" / "mobileone_s0_gaze.onnx"), "models"),
     (str(ROOT / "assets" / "eyetrack.ico"), "assets"),
     (str(ROOT / "profiles" / "*.json"), "profiles"),
 ]

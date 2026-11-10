@@ -34,8 +34,10 @@ def build_info() -> str:
 def self_test() -> int:
     """Eyetrack.exe --self-test : vérifie le paquet sans caméra ni fenêtre visible.
 
-    Charge tout ce dont le tracker a besoin (MediaPipe et sa DLL, modèle du visage, modèle du
-    regard ONNX, OpenCV, Tkinter) et analyse une image noire. Résultat dans
+    Charge tout ce dont le tracker a besoin (MediaPipe et sa DLL, modèle du visage, ONNX Runtime,
+    OpenCV, Tkinter) et analyse une image noire. Le modèle de regard de précision n'est pas dans le
+    paquet : `--gaze-model CHEMIN` le charge pour vérifier ONNX Runtime (sinon : celui de
+    l'utilisateur s'il l'a téléchargé, ou seulement l'import d'ONNX Runtime). Résultat dans
     eyetrack.selftest.log ; code de sortie 0 si tout va bien. Lancé par tools/build_exe.py
     avant d'installer : une construction cassée ne remplace jamais la version qui marche.
     """
@@ -47,12 +49,19 @@ def self_test() -> int:
         import tkinter as tk
         import main  # noqa: F401  (tous les modules du tracker)
         from face import FaceDetector
-        from gaze_model import create_gaze_estimator
+        import onnxruntime
+        from gaze_model import create_gaze_estimator, gaze_model_available, gaze_model_path
 
         face = FaceDetector().process(np.zeros((480, 640, 3), np.uint8))
         print(f"MediaPipe : OK (visage sur image noire : {face.detected})")
-        create_gaze_estimator(mode="net")
-        print("Modèle du regard (ONNX) : OK")
+        print(f"ONNX Runtime {onnxruntime.__version__} : OK")
+        model = sys.argv[sys.argv.index("--gaze-model") + 1] if "--gaze-model" in sys.argv else None
+        if model or gaze_model_available():
+            create_gaze_estimator(mode="net", model_path=model or gaze_model_path())
+            print(f"Modèle du regard de précision : OK ({model or gaze_model_path()})")
+        else:
+            create_gaze_estimator(mode="iris")
+            print("Modèle du regard de précision absent : mode simple OK")
         root = tk.Tk()
         root.withdraw()
         root.destroy()

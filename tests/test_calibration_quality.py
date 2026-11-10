@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from calibration import (  # noqa: E402
-    AffineGazeModel, CalibrationManager, classify_points, draw_review, evaluate_points,
+    AffineGazeModel, CalibrationManager, classify_points, draw_intro, draw_review, evaluate_points,
     points_to_redo, quality_label,
 )
 from face import GLARE_STRONG, FaceData, glare_label, glare_on_iris  # noqa: E402
@@ -134,6 +134,51 @@ class TestReflets(unittest.TestCase):
     def test_sans_visage(self):
         frame, _ = self.frame_and_face(glare_radius=6)
         self.assertEqual(glare_on_iris(frame, FaceData(detected=False)), 0.0)
+
+
+class TestAccueil(unittest.TestCase):
+    """Écran d'accueil du premier lancement (calibration proposée)."""
+
+    def test_tient_dans_l_ecran(self):
+        frame = np.full((480, 640, 3), 77, np.uint8)
+        for w, h in [(1280, 720), (1366, 768), (1920, 1080), (2560, 1440), (3840, 2160)]:
+            img = draw_intro(w, h, frame, True, 0.0, 9)
+            self.assertEqual(img.shape, (h, w, 3))
+            rows = np.where(img.max(axis=(1, 2)) > 0)[0]
+            cols = np.where(img.max(axis=(0, 2)) > 0)[0]
+            self.assertLess(rows.max(), h - 10, f"{w}x{h} : texte coupé en bas")
+            self.assertLess(cols.max(), w - 10, f"{w}x{h} : texte coupé à droite")
+            self.assertTrue((img == 77).all(axis=2).any(), f"{w}x{h} : image caméra absente")
+
+    def test_cadre_vert_ou_rouge(self):
+        frame = np.full((480, 640, 3), 77, np.uint8)
+        ok = draw_intro(1920, 1080, frame, True, 0.0)
+        lost = draw_intro(1920, 1080, frame, False, 0.0)
+        self.assertTrue((ok == (60, 200, 60)).all(axis=2).any())
+        self.assertFalse((ok == (60, 60, 230)).all(axis=2).any())
+        self.assertTrue((lost == (60, 60, 230)).all(axis=2).any())
+        self.assertEqual(draw_intro(800, 600, None, False, 0.0).shape, (600, 800, 3))
+
+    def test_echap_remet_a_plus_tard(self):
+        from unittest import mock
+        import calibration
+        frames = []
+
+        def capture():
+            frames.append(1)
+            return True, np.full((480, 640, 3), 77, np.uint8), 0.0
+
+        detector = mock.Mock()
+        detector.process.return_value = FaceData(detected=False)
+        mgr = CalibrationManager(SC, mode="net", num_points=9)
+        keys = iter([255, 255, 27])  # rien, rien, puis Échap
+        with mock.patch.multiple(calibration.cv2, namedWindow=mock.DEFAULT, setWindowProperty=mock.DEFAULT,
+                                 imshow=mock.DEFAULT, destroyWindow=mock.DEFAULT,
+                                 waitKey=mock.Mock(side_effect=lambda *_: next(keys, 27))),                 mock.patch.object(calibration.winapp, "bring_to_front", return_value=True):
+            done = mgr.run_interactive_calibration(capture, detector, gaze_estimator=None, intro=True)
+        self.assertFalse(done)
+        self.assertFalse(mgr.is_calibrated)
+        self.assertGreaterEqual(len(frames), 2)  # la caméra tourne pendant l'accueil
 
 
 if __name__ == "__main__":

@@ -27,6 +27,10 @@ reste en place.
 - **Double-clic** : reprend le dernier profil utilisé, ouvre OpenTrack s'il n'est pas déjà
   ouvert (case « Ouvrir OpenTrack au lancement d'Eyetrack » dans « Réglages avancés »), puis
   démarre le suivi avec le panneau et l'icône près de l'horloge.
+- **Premier lancement** (pas encore de calibration) : un écran d'accueil s'ouvre tout seul,
+  explique la calibration et montre l'image de la caméra (cadre vert = visage détecté).
+  `Entrée` lance la calibration, `Échap` la remet à plus tard (bouton « Calibrer le regard » du
+  panneau) ; elle est reproposée au lancement suivant tant qu'il n'y a pas de calibration.
 - **Déjà lancé ?** Un nouveau double-clic rouvre simplement le panneau (une seule instance : la
   caméra et le port d'OpenTrack ne se partagent pas).
 - **Erreurs** (caméra introuvable ou occupée…) : affichées dans une fenêtre. Journal du dernier
@@ -83,7 +87,8 @@ panneau : `python main.py --no-panel`.
 Bouton « Calibrer le regard » (ou `C` dans le Moniteur) : 9 cibles, à 10 % des bords de l'écran
 pour que le regard soit appris jusque dans les coins. Fixer chaque cible en bougeant doucement la
 tête. Si un reflet couvre les iris, un message rouge s'affiche : déplacer la lampe ou incliner un
-peu l'écran.
+peu l'écran. L'écran de calibration passe au-dessus de toutes les fenêtres (jeu, navigateur,
+panneau) et prend le clavier, même lancé par un raccourci pendant le jeu.
 
 À la fin, un écran de résultats montre, pour chaque cible, où le regard a été estimé (croix) et
 l'erreur en degrés. Chaque point est prédit **sans lui** (validation croisée) : la note ne flatte
@@ -231,9 +236,10 @@ Ensuite :
   les seuils de reflet (« léger » dès 5 % de l'iris, « gênant » dès 15 %, valeur affichée dans
   l'aperçu caméra), choisis sans mesure réelle.
 - **Phase 3 — exécutable** : `Eyetrack.exe` fait (sans terminal, raccourci sur le Bureau,
-  dernier profil repris, OpenTrack ouvert automatiquement, instance unique, erreurs en fenêtre).
-  Reste, seulement pour le donner à quelqu'un d'autre : un vrai installateur, un assistant de
-  premier lancement (caméra, écran, distance, calibration) et un profil OpenTrack fourni (entrée
+  dernier profil repris, OpenTrack ouvert automatiquement, instance unique, erreurs en fenêtre,
+  calibration proposée au premier lancement). Reste, seulement pour le donner à quelqu'un
+  d'autre : un vrai installateur, un assistant de premier lancement complet (choix de la caméra,
+  taille de l'écran, distance) et un profil OpenTrack fourni (entrée
   UDP, Accela, axes réglés). Avant toute diffusion, régler les licences : le modèle de regard est
   non commercial.
 - **Phase 4 — bonus** : changement de profil automatique selon le jeu lancé, courbes de

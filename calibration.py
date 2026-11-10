@@ -327,6 +327,57 @@ def draw_review(screen_config: ScreenConfig, points: list[dict], errs: list[floa
     return img
 
 
+def draw_intro(w: int, h: int, frame: np.ndarray | None, face_detected: bool, glare: float,
+               num_points: int = 9) -> np.ndarray:
+    """Écran d'accueil du premier lancement : explications, image de la caméra, Commencer / Plus tard.
+
+    Texte sans accents (cv2.putText). `frame` : image caméra (déjà en miroir) ou None.
+    """
+    img = np.zeros((h, w, 3), dtype=np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    # Tailles prévues pour 1920x1080, agrandies ou réduites selon l'écran (lisible en 1440p/4K)
+    sc = max(0.7, min(h / 1080.0, w / 1920.0))
+    x0 = max(20, w // 2 - int(560 * sc))
+    y = 0.0
+
+    def put(text: str, dy: float, size: float, color: tuple, thick: int = 1, x: int | None = None) -> None:
+        nonlocal y
+        y += dy * sc
+        cv2.putText(img, text, (x0 if x is None else x, int(y)), font, size * sc, color,
+                    max(1, round(thick * sc)), cv2.LINE_AA)
+
+    put("Bienvenue dans Eyetrack", 110, 1.4, (0, 200, 255), 3)
+    put("Premiere utilisation : on calibre votre regard (environ 1 minute)", 55, 0.8, (230, 230, 230), 2)
+    steps = [
+        "1. Installez-vous comme pour jouer, face a la camera (gardez vos lunettes si vous en portez).",
+        f"2. Un repere orange apparait a {num_points} endroits : fixez-le jusqu'a ce qu'il change de place.",
+        "3. Bougez doucement la tete en le fixant : le regard est appris dans toutes les positions.",
+        "4. A la fin, une note s'affiche : [Entree] valide, [R] refait les points rates.",
+    ]
+    for k, line in enumerate(steps):
+        put(line, 60 if k == 0 else 42, 0.65, (210, 210, 210))
+
+    # Image de la caméra : on vérifie d'un coup d'œil qu'on est bien cadré
+    y_cam = int(y + 35 * sc)
+    cam_w = max(1, min(int(420 * sc), w - 2 * x0))
+    cam_h = int(cam_w * (frame.shape[0] / frame.shape[1] if frame is not None else 0.75))
+    color = (60, 200, 60) if face_detected else (60, 60, 230)
+    if frame is not None and y_cam + cam_h < h:
+        img[y_cam:y_cam + cam_h, x0:x0 + cam_w] = cv2.resize(frame, (cam_w, cam_h))
+    cv2.rectangle(img, (x0 - 3, y_cam - 3), (x0 + cam_w + 2, y_cam + cam_h + 2), color, max(2, round(3 * sc)))
+    status = "Visage detecte" if face_detected else "Visage non detecte : placez-vous face a la camera"
+    sx = x0 + cam_w + int(30 * sc)
+    y = float(y_cam)
+    put(status, 30, 0.75, color, 2, x=sx)
+    if glare > GLARE_STRONG:
+        put("Reflet sur les lunettes : deplacez la lampe ou inclinez un peu l'ecran", 40, 0.6, (60, 60, 230), 1, x=sx)
+
+    y = float(y_cam + cam_h)
+    put("[Entree] Commencer la calibration", 75, 0.95, (60, 200, 60), 2)
+    put("[Echap] Plus tard (bouton \"Calibrer le regard\" du panneau)", 45, 0.7, (190, 190, 190))
+    return img
+
+
 def open_calibration_window(window_name: str, w: int, h: int) -> bool:
     """Ouvre la fenêtre de calibration en plein écran, au-dessus de tout, avec le clavier.
 
@@ -395,6 +446,7 @@ class CalibrationManager:
         samples_per_point: int = 45,
         settle_frames: int = 15,
         review: bool = True,
+        intro: bool = False,
     ) -> bool:
         """Calibration guidée : collecte point par point, note de qualité, points à refaire.
 
@@ -402,6 +454,8 @@ class CalibrationManager:
         lui, donc honnête) et la note globale : [Entrée] valide, [R] refait les points en
         rouge (ou le moins bon), [Échap] annule en gardant l'ancienne calibration.
         Avec review=False (outils, tests), la calibration est validée directement.
+        Avec intro=True (premier lancement), un écran d'accueil explique la calibration avant
+        de commencer ; [Échap] la remet à plus tard (renvoie False).
         """
         w = self.screen_config.width_px
         h = self.screen_config.height_px
@@ -417,6 +471,10 @@ class CalibrationManager:
             "iris_probe": IrisGazeEstimator(), "blink": BlinkDetector(), "t0": time.perf_counter(),
             "window": window_name, "w": w, "h": h,
         }
+        if intro and not self._intro_screen(ctx):
+            cv2.destroyWindow(window_name)
+            print("[calibration] Calibration remise à plus tard (bouton « Calibrer le regard » du panneau).")
+            return False
 
         total_points = len(self.points_norm)
         points: list[dict | None] = [None] * total_points
@@ -485,6 +543,23 @@ class CalibrationManager:
             print(f"              /!\\ Reflets sur les lunettes aux points {', '.join(map(str, glare_pts))}")
         self._print_diagnostic(G_mat, H_mat, Y_mat)
         return True
+
+    def _intro_screen(self, ctx: dict) -> bool:
+        """Écran d'accueil (premier lancement) : vrai pour commencer, faux pour plus tard."""
+        w, h, n = ctx["w"], ctx["h"], len(self.points_norm)
+        cv2.imshow(ctx["window"], draw_intro(w, h, None, False, 0.0, n))
+        glare_live = 0.0
+        while True:
+            ret, frame, _ = ctx["capture_fn"]()
+            if ret and frame is not None:
+                face_data = ctx["face_detector"].process(frame)
+                glare_live += 0.3 * (glare_on_iris(frame, face_data) - glare_live)
+                cv2.imshow(ctx["window"], draw_intro(w, h, frame, face_data.detected, glare_live, n))
+            key = cv2.waitKey(1) & 0xFF
+            if key in (13, 10, 32):           # Entrée / Espace
+                return True
+            if key == 27 or key == ord("q"):  # Échap
+                return False
 
     def _collect_point(self, pt_idx: int, ctx: dict) -> dict | None:
         """Affiche la cible `pt_idx` et collecte ses échantillons ; None si annulé (Échap)."""

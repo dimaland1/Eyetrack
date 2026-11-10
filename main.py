@@ -127,6 +127,8 @@ def parse_arguments() -> tuple[argparse.Namespace, Profile]:
     parser.add_argument("--overlay", action="store_true", default=active_profile.overlay_enabled, help="Active l'overlay transparent")
     parser.add_argument("--no-recalib", action="store_true", default=not active_profile.recalib_on_click, help="Désactive recalibration RLS")
     parser.add_argument("--no-panel", action="store_true", help="Sans panneau de contrôle (fenêtre Moniteur seule)")
+    parser.add_argument("--no-calib-offer", action="store_true",
+                        help="Sans calibration : ne pas la proposer au démarrage (écran d'accueil)")
     parser.add_argument("--moniteur", action="store_true", help="Ouvre aussi la fenêtre Moniteur (vidéo + HUD de diagnostic)")
 
     # Paramètres de lissage One Euro (séparés : pose en degrés/cm, regard en pixels)
@@ -437,6 +439,8 @@ def main() -> None:
     from collections import deque
     jitter_head: deque = deque(maxlen=60)
     jitter_gaze: deque = deque(maxlen=60)
+    calib_offer_at = (time.perf_counter() + 1.5
+                      if not calibration_mgr.is_calibrated and not args.no_calib_offer else None)
 
     try:
         while True:
@@ -663,6 +667,12 @@ def main() -> None:
             }
             if key in key_actions:
                 commands.append(("action", key_actions[key]))
+            # Premier lancement (aucune calibration) : écran d'accueil et calibration proposés une
+            # fois, peu après le démarrage du suivi. [Échap] la remet à plus tard (bouton du panneau).
+            if calib_offer_at is not None and time.perf_counter() >= calib_offer_at:
+                calib_offer_at = None
+                if not calibration_mgr.is_calibrated:
+                    commands.append(("action", "calibrate_intro"))
 
             quit_requested = False
             for command in commands:
@@ -696,8 +706,9 @@ def main() -> None:
                 elif action == "pause":
                     paused = sender.toggle_pause()
                     print(f"[main] {'PAUSE : caméra ramenée au centre' if paused else 'Reprise du suivi'}")
-                elif action == "calibrate":
-                    print(f"[main] Démarrage de la calibration affine {args.calib_points} points...")
+                elif action in ("calibrate", "calibrate_intro"):
+                    print(f"[main] Démarrage de la calibration affine {args.calib_points} points"
+                          f"{' (écran d’accueil du premier lancement)' if action == 'calibrate_intro' else ''}...")
                     if panel is not None:
                         panel.publish(panel_status(calibrating=True))
                     success = calibration_mgr.run_interactive_calibration(
@@ -705,6 +716,7 @@ def main() -> None:
                         face_detector=face_detector,
                         gaze_estimator=gaze_estimator,
                         normalizer=normalizer,
+                        intro=action == "calibrate_intro",
                     )
                     if success:
                         calibration_mgr.save(calib_file)

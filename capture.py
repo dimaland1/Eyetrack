@@ -16,7 +16,15 @@ from paths import data_path
 
 # Mémorise le mode de capture qui fonctionne (évite ~10-25 s de recherche à chaque lancement)
 CAMERA_CACHE_FILE = data_path("camera_mode.json")
+# Version des entrées mémorisées. Avant la version 2, l'ordre des réglages perdait le format
+# MJPG sous DirectShow : la caméra retombait en non compressé, le 720p ne dépassait pas
+# 10 images/s et le 640x480 était mémorisé à tort. Ces anciennes entrées sont ignorées.
+CAMERA_CACHE_VERSION = 2
 _BACKENDS = {"dshow": cv2.CAP_DSHOW, "any": cv2.CAP_ANY}
+# Un mode de repli (résolution plus basse) ne remplace le mode demandé que s'il est nettement
+# plus rapide. Dans une pièce sombre, tous les modes sont lents de la même façon (pose plus
+# longue) : baisser la résolution n'apporterait rien.
+FALLBACK_SPEEDUP = 1.5
 
 
 class WebcamCapture:
@@ -63,14 +71,28 @@ class WebcamCapture:
         v = int(value)
         return "".join(chr((v >> (8 * i)) & 0xFF) for i in range(4))
 
-    def _configure(self, cap: cv2.VideoCapture, width: int, height: int, mjpg: bool) -> None:
-        """Applique format, résolution et framerate.
+    def _configure(self, cap: cv2.VideoCapture, backend: int, width: int, height: int, mjpg: bool) -> None:
+        """Applique framerate, résolution et format.
 
         Chaque changement reconstruit le graphe DirectShow (~2,5 s mesurés par réglage) :
         on n'envoie que le strict nécessaire.
+
+        Avec DirectShow, le format doit être réglé EN DERNIER. OpenCV (cap_dshow.cpp) oublie le
+        format demandé dès qu'un réglage a réussi, puis reconfigure la caméra sans lui au réglage
+        suivant de la taille ou du framerate ; il reprend alors le premier format accepté de sa
+        liste, où le non compressé (YUY2) passe avant MJPG. Mesuré sur une Logitech C920 avec le
+        format réglé en premier : 720p à 10 images/s et 1080p à 5, contre 24 à 30 en MJPG.
         """
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        if backend == cv2.CAP_DSHOW:
+            cap.set(cv2.CAP_PROP_FPS, self.requested_fps)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            if mjpg:
+                cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+            return
         if mjpg:
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            cap.set(cv2.CAP_PROP_FOURCC, fourcc)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         cap.set(cv2.CAP_PROP_FPS, self.requested_fps)
@@ -94,10 +116,10 @@ class WebcamCapture:
         try:
             with open(CAMERA_CACHE_FILE, "r", encoding="utf-8") as f:
                 entry = json.load(f).get(self._cache_key())
-            if entry:
+            if entry and entry.get("v") == CAMERA_CACHE_VERSION:
                 return (entry["label"], _BACKENDS[entry["backend"]], int(entry["w"]), int(entry["h"]),
                         bool(entry["mjpg"]))
-        except (OSError, ValueError, KeyError):
+        except (OSError, ValueError, KeyError, AttributeError):
             pass
         return None
 
@@ -109,8 +131,8 @@ class WebcamCapture:
             if os.path.exists(CAMERA_CACHE_FILE):
                 with open(CAMERA_CACHE_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-            data[self._cache_key()] = {"label": label, "backend": names.get(backend, "any"),
-                                       "w": w, "h": h, "mjpg": mjpg}
+            data[self._cache_key()] = {"v": CAMERA_CACHE_VERSION, "label": label,
+                                       "backend": names.get(backend, "any"), "w": w, "h": h, "mjpg": mjpg}
             with open(CAMERA_CACHE_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except (OSError, ValueError):
@@ -146,40 +168,47 @@ class WebcamCapture:
         best: tuple[float, tuple] | None = None
         # Une seule ouverture à la fois : ouvrir la caméra deux fois puis fermer la première
         # casse la seconde avec DirectShow.
-        for cand in candidates:
+        for pos, cand in enumerate(candidates):
             label, backend, cw, ch, mjpg = cand
             cap = cv2.VideoCapture(self.camera_index, backend)
             if not cap.isOpened():
                 cap.release()
                 continue
-            self._configure(cap, cw, ch, mjpg)
+            self._configure(cap, backend, cw, ch, mjpg)
             fps = self._measure_fps(cap)
             fmt = self._fourcc_str(cap.get(cv2.CAP_PROP_FOURCC))
-            # MJPG demandé mais ignoré par la webcam : inutile de le redemander (2,5 s perdues)
+            # MJPG demandé mais non obtenu (webcam sans MJPG à cette taille) : inutile de le
+            # redemander au prochain lancement (2,5 s perdues)
             effective = (label, backend, cw, ch, mjpg and fmt == "MJPG")
             tag = "Mode mémorisé" if cand is cached else "Essai " + label
             print(f"[capture] {tag:30s} : {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x"
                   f"{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} {fmt} -> {fps:.1f} fps mesurés")
-            if best is None or fps > best[0] + 1.0:
+            # Les candidats sont classés par préférence : un suivant ne passe devant que s'il est
+            # nettement plus rapide (mode demandé limité par l'USB, pas par la lumière).
+            if best is None or (fps > 0 and fps >= FALLBACK_SPEEDUP * best[0]):
                 best = (fps, effective)
-            if fps >= good_enough or (cand is cached and fps > 0):
+            # Dernier candidat et c'est lui le mode retenu : inutile de le fermer pour le rouvrir
+            last_and_best = pos == len(candidates) - 1 and best[1] is effective and fps > 0
+            if fps >= good_enough or (cand is cached and fps > 0) or last_and_best:
                 # Mode satisfaisant, ou mode mémorisé qui délivre des images : on le garde ouvert.
                 # Un mode mémorisé lent l'est presque toujours à cause de la lumière (pose plus
                 # longue dans une pièce sombre) : rechercher un autre mode coûterait ~10 s par
                 # essai sans rien changer. Supprimer camera_mode.json pour relancer la recherche.
                 if fps < good_enough:
-                    print(f"[capture] Images/s faibles avec le mode mémorisé : pièce sombre ? "
+                    print(f"[capture] Images/s faibles ({fps:.1f}) : pièce sombre ? "
                           f"(plus de lumière = plus d'images/s)")
                 self.cap = cap
                 break
             cap.release()
 
         if self.cap is None and best is not None:
-            # Aucun mode « satisfaisant » : on rouvre le meilleur mesuré
+            # Aucun mode « satisfaisant » : on rouvre le mode retenu
             _, backend, cw, ch, mjpg = best[1]
+            print(f"[capture] Aucun mode n'atteint {good_enough:.0f} images/s : pièce sombre ? "
+                  f"(plus de lumière = plus d'images/s). Mode retenu : {cw}x{ch}")
             self.cap = cv2.VideoCapture(self.camera_index, backend)
             if self.cap.isOpened():
-                self._configure(self.cap, cw, ch, mjpg)
+                self._configure(self.cap, backend, cw, ch, mjpg)
 
         if self.cap is None or not self.cap.isOpened() or best is None:
             raise RuntimeError(f"Impossible d'ouvrir la webcam à l'index {self.camera_index}")

@@ -96,6 +96,13 @@ class TestWindows(unittest.TestCase):
     def test_console_detected_in_tests(self):
         self.assertIsNone(winapp.setup_log_file(Path(tempfile.gettempdir()) / "ne_doit_pas_servir.log"))
 
+    @unittest.skipUnless(winapp.IS_WINDOWS, "Windows uniquement")
+    def test_premier_plan_jamais_pour_un_autre_programme(self):
+        # La mise au premier plan (fenêtre de calibration) ne doit jamais toucher la fenêtre
+        # d'un autre programme portant le même titre (ici le bureau, tenu par l'Explorateur).
+        self.assertFalse(winapp.bring_to_front(f"Eyetrack fenetre absente {uuid.uuid4()}"))
+        self.assertFalse(winapp.bring_to_front("Program Manager"))
+
 
 if __name__ == "__main__":
     unittest.main()

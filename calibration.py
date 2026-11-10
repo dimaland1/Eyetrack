@@ -16,6 +16,7 @@ import numpy as np
 from face import GLARE_STRONG, glare_on_iris
 from geometry import ScreenConfig
 from paths import data_path
+import winapp
 
 
 CALIB_FORMAT_VERSION = 5  # v5 : features réseau = point d'impact (mm) + ratios d'iris
@@ -326,6 +327,23 @@ def draw_review(screen_config: ScreenConfig, points: list[dict], errs: list[floa
     return img
 
 
+def open_calibration_window(window_name: str, w: int, h: int) -> bool:
+    """Ouvre la fenêtre de calibration en plein écran, au-dessus de tout, avec le clavier.
+
+    Sans cela, elle pouvait s'ouvrir derrière le jeu, le navigateur ou le panneau, et Échap ou
+    Entrée partaient dans une autre fenêtre. Renvoie vrai si elle est bien au premier plan.
+    """
+    cv2.namedWindow(window_name, cv2.WND_PROP_FULLSCREEN)
+    cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    cv2.imshow(window_name, np.zeros((h, w, 3), np.uint8))  # fenêtre affichée avant d'être levée
+    cv2.waitKey(1)
+    try:
+        cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
+    except (cv2.error, AttributeError):  # OpenCV ancien ou sans interface Windows
+        pass
+    return winapp.bring_to_front(window_name)
+
+
 class CalibrationManager:
     """Gestionnaire de la calibration interactive avec guidage de mouvement de tête."""
 
@@ -389,8 +407,7 @@ class CalibrationManager:
         h = self.screen_config.height_px
 
         window_name = "Calibration Personnelle (ESC pour annuler)"
-        cv2.namedWindow(window_name, cv2.WND_PROP_FULLSCREEN)
-        cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        open_calibration_window(window_name, w, h)
 
         from gaze_model import IrisGazeEstimator
         from filters import BlinkDetector

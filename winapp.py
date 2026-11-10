@@ -84,6 +84,56 @@ def report_error(text: str, title: str = "Eyetrack") -> None:
         message_box(title, text, error=True)
 
 
+def bring_to_front(title: str) -> bool:
+    """Met la fenêtre `title` de ce programme au-dessus de tout et lui donne le clavier.
+
+    Au-dessus de tout : « toujours visible », devant le jeu en fenêtre, le navigateur, le panneau.
+    Le clavier : Windows refuse le premier plan à un programme qui n'est pas au premier plan
+    (raccourci reçu pendant le jeu…) ; on se rattache donc, le temps de l'appel, à la file
+    d'entrée de la fenêtre active. À appeler depuis le thread qui a créé la fenêtre.
+    Renvoie vrai si la fenêtre est bien devenue la fenêtre active.
+    """
+    if not IS_WINDOWS:
+        return False
+    u = ctypes.WinDLL("user32")
+    k = ctypes.WinDLL("kernel32")
+    u.FindWindowW.restype = wintypes.HWND
+    u.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    u.GetForegroundWindow.restype = wintypes.HWND
+    u.GetWindowThreadProcessId.restype = wintypes.DWORD
+    u.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    u.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                               ctypes.c_int, ctypes.c_int, wintypes.UINT]
+    u.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+    for fn in (u.BringWindowToTop, u.SetForegroundWindow, u.SetFocus):
+        fn.argtypes = [wintypes.HWND]
+
+    hwnd = u.FindWindowW(None, title)
+    if not hwnd:
+        return False
+    pid = wintypes.DWORD()
+    u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if pid.value != os.getpid():  # jamais la fenêtre d'un autre programme
+        return False
+
+    HWND_TOPMOST = wintypes.HWND(-1)
+    SWP_NOSIZE, SWP_NOMOVE, SWP_SHOWWINDOW = 0x1, 0x2, 0x40
+    u.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW)
+
+    me = k.GetCurrentThreadId()
+    fg = u.GetForegroundWindow()
+    other = u.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(other and other != me and u.AttachThreadInput(me, other, True))
+    try:
+        u.BringWindowToTop(hwnd)
+        u.SetForegroundWindow(hwnd)
+        u.SetFocus(hwnd)
+    finally:
+        if attached:
+            u.AttachThreadInput(me, other, False)
+    return u.GetForegroundWindow() == hwnd
+
+
 # --------------------------------------------------------------------------- instance unique
 
 class SingleInstance:

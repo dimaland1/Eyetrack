@@ -31,18 +31,26 @@ MIN_FEATURE_STD = {
 }
 # Poids d'un clic souris en recalibration RLS, en « nombre d'échantillons » de calibration
 RLS_EQUIV_SAMPLES = 15.0
+# Compensation géométrique de la fuite de pose de tête du réseau MobileOne (entraîné sur Gaze360) :
+# le réseau réagit à 100 % aux rotations de la tête mais seulement partiellement aux contre-rotations
+# des yeux dans les orbites (réflexe vestibulo-oculaire). Ces distances effectives (mm) annulent le
+# glissement parasite du point d'impact quand la tête tourne à regard fixe.
+HEAD_YAW_LEAKAGE_MM = 500.0
+HEAD_PITCH_LEAKAGE_MM = 320.0
+# Part de bruit intra-cible conservée en mode 'net' après rejet MAD (évite le biais d'atténuation
+# Errors-in-Variables qui sous-pondérait le réseau, plus bruité d'une frame à l'autre que l'iris).
+TARGET_SHRINK_GAMMA = 0.15
 
 
 class AffineGazeModel:
     """Modèle de calibration Ridge sur features standardisées.
 
     Modes :
-    - 'net'  : features = point d'impact (x, y en mm) du rayon de regard sur le plan écran.
-               Le réseau voit déjà la tête tournée et le rayon part de la position réelle de
-               l'œil : rotations ET translations de la tête sont gérées par la géométrie. La
-               calibration n'est qu'une correction affine (gains, décalages, axe visuel).
-               + ratios d'iris (x, y) : plus précis à l'horizontale que le réseau. Choisi par
-               validation croisée sur une vraie calibration avec lunettes (tools/analyse_calibration.py).
+    - 'net'  : features = point d'impact (x, y en mm) du rayon de regard sur le plan écran
+               compensé de la fuite de rotation de tête (VOR), + ratios d'iris (x, y).
+               L'ajustement calcule les centroïdes robustes (médiane/MAD à 75 %) par cible pour
+               éliminer les micro-saccades et le biais d'atténuation entre réseau et iris, avec
+               une régularisation directionnelle découplant l'axe vertical du bruit horizontal.
     - 'iris' : features = [rx, ry, rx², rx·ry, ry², yaw tête, pitch tête]. Le ratio d'iris est
                un regard œil-dans-tête : la pose de tête est ici nécessaire.
 
@@ -71,10 +79,45 @@ class AffineGazeModel:
         G = np.atleast_2d(np.asarray(G, dtype=np.float64))
         H = np.atleast_2d(np.asarray(H, dtype=np.float64))
         if self.mode == "net":
-            return G
+            out = G.copy()
+            if H.shape[1] >= 2 and out.shape[1] >= 2:
+                if len(H) == 1 and len(out) > 1:
+                    H = np.tile(H, (len(out), 1))
+                if len(H) == len(out):
+                    out[:, 0] -= HEAD_YAW_LEAKAGE_MM * np.tan(np.radians(H[:, 0]))
+                    out[:, 1] += HEAD_PITCH_LEAKAGE_MM * np.tan(np.radians(H[:, 1]))
+            return out
         rx = G[:, 0:1]
         ry = G[:, 1:2]
         return np.hstack([rx, ry, rx**2, rx * ry, ry**2, H[:, 0:1], H[:, 1:2]])
+
+    @staticmethod
+    def _trim_cluster(F: np.ndarray, keep_pct: float = 75.0) -> np.ndarray:
+        """Conserve les échantillons les plus proches de la médiane (rejet MAD des saccades)."""
+        if len(F) < 8:
+            return F
+        med = np.median(F, axis=0)
+        mad = np.maximum(np.median(np.abs(F - med), axis=0), 1e-6)
+        dist = np.linalg.norm((F - med) / mad, axis=1)
+        return F[dist <= np.percentile(dist, keep_pct)]
+
+    def _denoise_targets(self, raw: np.ndarray, Y: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
+        """Filtre les outliers par cible et réduit le bruit intra-cible en mode 'net'."""
+        targets = np.unique(Y, axis=0)
+        n_unique = len(targets)
+        if self.mode != "net" or n_unique < 4 or len(raw) < n_unique * 4:
+            return raw, Y, n_unique
+
+        gamma = TARGET_SHRINK_GAMMA if n_unique >= 6 else 0.50
+        raw_out: list[np.ndarray] = []
+        y_out: list[np.ndarray] = []
+        for t in targets:
+            mask = np.all(Y == t, axis=1)
+            ft = self._trim_cluster(raw[mask])
+            mean_t = ft.mean(axis=0)
+            raw_out.append((1.0 - gamma) * mean_t + gamma * ft)
+            y_out.append(np.tile(t, (len(ft), 1)))
+        return np.vstack(raw_out), np.vstack(y_out), n_unique
 
     def _design(self, G: np.ndarray, H: np.ndarray) -> np.ndarray:
         """Matrice de design standardisée [z_1 .. z_k, 1]."""
@@ -87,33 +130,55 @@ class AffineGazeModel:
 
         Args:
             G: Mesures de regard brut (N, d).
-            H: Poses de tête (N, 2) [yaw, pitch] (utilisées en mode iris uniquement).
+            H: Poses de tête (N, 2) [yaw, pitch].
             Y: Coordonnées vraies des cibles écran en pixels (N, 2).
 
         Returns:
             RMSE résiduel d'entraînement en pixels.
         """
-        raw = self._raw_features(G, H)
-        self.feat_mean = raw.mean(axis=0)
-        std = raw.std(axis=0)
+        raw_all = self._raw_features(G, H)
+        Y_arr = np.asarray(Y, dtype=np.float64)
+        raw_fit, Y_fit, n_unique = self._denoise_targets(raw_all, Y_arr)
+
+        self.feat_mean = raw_fit.mean(axis=0)
+        std = raw_fit.std(axis=0)
         # Une feature qui a peu varié (ex. tête immobile) ne doit pas être amplifiée
-        floor = np.asarray(MIN_FEATURE_STD.get(self.mode, [1e-6] * raw.shape[1]), dtype=np.float64)
-        self.feat_std = np.maximum(std, floor[: raw.shape[1]])
+        floor = np.asarray(MIN_FEATURE_STD.get(self.mode, [1e-6] * raw_fit.shape[1]), dtype=np.float64)
+        self.feat_std = np.maximum(std, floor[: raw_fit.shape[1]])
 
-        phi = self._design(G, H)
-        n, k = phi.shape
-        reg = self.alpha * n * np.eye(k, dtype=np.float64)
-        reg[-1, -1] = 0.0  # biais (dernière colonne) non pénalisé
+        z_fit = (raw_fit - self.feat_mean) / self.feat_std
+        phi_fit = np.hstack([z_fit, np.ones((z_fit.shape[0], 1), dtype=np.float64)])
+        n, k = phi_fit.shape
 
-        A = phi.T @ phi + reg
-        self.weights = np.linalg.solve(A, phi.T @ Y)
+        if self.mode == "net" and k == 5:
+            # Régularisation directionnelle : évite que les termes croisés (ex. ratio vertical
+            # d'iris pollué par la paupière supérieure en bas d'écran) ne dévient l'autre axe.
+            if n_unique >= 6:
+                pen_x = [1.0, 1.5, 1.0, 1.5, 0.0]
+                pen_y = [10.0, 1.0, 10.0, 2.5, 0.0]
+            else:
+                pen_x = [5.0, 25.0, 5.0, 25.0, 0.0]
+                pen_y = [25.0, 5.0, 25.0, 10.0, 0.0]
+            Ax = phi_fit.T @ phi_fit + self.alpha * n * np.diag(pen_x)
+            Ay = phi_fit.T @ phi_fit + self.alpha * n * np.diag(pen_y)
+            wx = np.linalg.solve(Ax, phi_fit.T @ Y_fit[:, 0])
+            wy = np.linalg.solve(Ay, phi_fit.T @ Y_fit[:, 1])
+            self.weights = np.column_stack([wx, wy])
+            A = 0.5 * (Ax + Ay)
+        else:
+            reg = self.alpha * n * np.eye(k, dtype=np.float64)
+            reg[-1, -1] = 0.0  # biais (dernière colonne) non pénalisé
+            A = phi_fit.T @ phi_fit + reg
+            self.weights = np.linalg.solve(A, phi_fit.T @ Y_fit)
+
         # Covariance RLS : on « dilue » la confiance du fit initial pour qu'un clic pèse
         # comme ~RLS_EQUIV_SAMPLES échantillons de calibration (sinon 1 clic = 1/N, inefficace).
         self.P = np.linalg.inv(A) * (n / RLS_EQUIV_SAMPLES)
         self.is_fitted = True
 
-        pred = phi @ self.weights
-        return float(np.sqrt(np.mean(np.sum((Y - pred) ** 2, axis=1))))
+        phi_all = self._design(G, H)
+        pred = phi_all @ self.weights
+        return float(np.sqrt(np.mean(np.sum((Y_arr - pred) ** 2, axis=1))))
 
     def update_rls(
         self,
@@ -269,7 +334,10 @@ def evaluate_points(
         m = AffineGazeModel(mode=mode, alpha=alpha)
         m.fit(np.vstack([p[0] for p in others]), np.vstack([p[1] for p in others]),
               np.vstack([np.tile(p[2], (len(p[0]), 1)) for p in others]))
-        mean_pred = (m._design(G_i, H_i) @ m.weights).mean(axis=0)
+        raw_i = m._trim_cluster(m._raw_features(G_i, H_i))
+        z_i = (raw_i - m.feat_mean) / m.feat_std
+        phi_i = np.hstack([z_i, np.ones((len(z_i), 1), dtype=np.float64)])
+        mean_pred = (phi_i @ m.weights).mean(axis=0)
         errs.append(screen_config.visual_angle_deg((float(t_i[0]), float(t_i[1])),
                                                    (float(mean_pred[0]), float(mean_pred[1]))))
         preds.append(mean_pred)

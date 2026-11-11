@@ -135,8 +135,8 @@ def main() -> None:
     ap.add_argument("--no-flip", action="store_true")
     ap.add_argument("--screen-diag", type=float, default=27.0)
     ap.add_argument("--distance", type=float, default=60.0)
-    ap.add_argument("--resolutions", default="640x480,800x600,1280x720",
-                    help="Résolutions à comparer, ex. 640x480,800x600,1280x720")
+    ap.add_argument("--resolutions", default="640x480,1280x720,1920x1080",
+                    help="Résolutions à comparer, ex. 640x480,1280x720,1920x1080")
     args = ap.parse_args()
 
     resolutions = [tuple(int(v) for v in r.lower().split("x")) for r in args.resolutions.split(",") if r]

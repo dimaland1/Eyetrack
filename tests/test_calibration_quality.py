@@ -14,8 +14,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from calibration import (  # noqa: E402
-    AffineGazeModel, CalibrationManager, classify_points, draw_intro, draw_review, evaluate_points,
-    points_to_redo, quality_label,
+    HEAD_PITCH_LEAKAGE_MM, HEAD_YAW_LEAKAGE_MM, AffineGazeModel, CalibrationManager,
+    classify_points, draw_intro, draw_review, evaluate_points, points_to_redo, quality_label,
 )
 from face import GLARE_STRONG, FaceData, glare_label, glare_on_iris  # noqa: E402
 from geometry import ScreenConfig  # noqa: E402
@@ -179,6 +179,37 @@ class TestAccueil(unittest.TestCase):
         self.assertFalse(done)
         self.assertFalse(mgr.is_calibrated)
         self.assertGreaterEqual(len(frames), 2)  # la caméra tourne pendant l'accueil
+
+
+class TestPrecisionPiste1(unittest.TestCase):
+    """Vérifie la compensation VOR de la tête et le rejet des micro-saccades (Piste 1)."""
+
+    def test_compensation_fuite_rotation_tete(self):
+        pts = synthetic_points(noise_mm=5.0)
+        # Sur le point 6 (bas-gauche), l'utilisateur tourne la tête de +7° en yaw et +10° en pitch :
+        # le réseau subit la fuite VOR (+500*tan(yaw) en X, -320*tan(pitch) en Y).
+        G6, _, t6 = pts[6]
+        H6 = np.column_stack([np.full(len(G6), 7.0), np.full(len(G6), 10.0)])
+        G6_leaked = G6.copy()
+        G6_leaked[:, 0] += HEAD_YAW_LEAKAGE_MM * np.tan(np.radians(H6[:, 0]))
+        G6_leaked[:, 1] -= HEAD_PITCH_LEAKAGE_MM * np.tan(np.radians(H6[:, 1]))
+        pts[6] = (G6_leaked, H6, t6)
+
+        errs, _, mean = evaluate_points("net", pts, SC)
+        self.assertLess(errs[6], 2.5, f"Fuite de tête non compensée au point 7 : {errs[6]:.2f}°")
+        self.assertLess(mean, 2.0, f"Moyenne globale dégradée : {mean:.2f}°")
+
+    def test_rejet_outliers_saccades(self):
+        pts = synthetic_points(noise_mm=5.0)
+        # 15 % des images de chaque cible ont une saccade parasite de +250 mm
+        corrupted = []
+        for G, H, t in pts:
+            Gc = G.copy()
+            Gc[:6, 0] += 250.0
+            Gc[:6, 1] -= 200.0
+            corrupted.append((Gc, H, t))
+        _, _, mean = evaluate_points("net", corrupted, SC)
+        self.assertLess(mean, 2.5, f"Les saccades parasites ont faussé le fit : {mean:.2f}°")
 
 
 if __name__ == "__main__":

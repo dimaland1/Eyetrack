@@ -18,6 +18,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from calibration import AffineGazeModel, RIDGE_ALPHA  # noqa: E402
 from geometry import ScreenConfig  # noqa: E402
 from paths import data_path  # noqa: E402
 
@@ -36,7 +37,7 @@ def build(name: str, G: np.ndarray, E: dict[str, np.ndarray]) -> tuple[np.ndarra
     iris = [E["iris_rx"], E["iris_ry"]]
     feats: list[np.ndarray]
     kinds: list[str]
-    if name == "impact (actuel)":
+    if name == "impact seul":
         feats, kinds = [hx, hy], ["hit", "hit"]
     elif name == "impact + tête":
         feats, kinds = [hx, hy, *head], ["hit", "hit", "deg", "deg"]
@@ -44,7 +45,7 @@ def build(name: str, G: np.ndarray, E: dict[str, np.ndarray]) -> tuple[np.ndarra
         feats, kinds = [hx, hy, hx * hx / 100, hx * hy / 100, hy * hy / 100], ["hit"] * 5
     elif name == "réseau + tête":
         feats, kinds = [*net, *head], ["deg"] * 4
-    elif name == "impact + iris":
+    elif name == "impact + iris (brut)":
         feats, kinds = [hx, hy, *iris], ["hit", "hit", "iris", "iris"]
     elif name == "impact + tête + iris":
         feats, kinds = [hx, hy, *head, *iris], ["hit", "hit", "deg", "deg", "iris", "iris"]
@@ -56,8 +57,8 @@ def build(name: str, G: np.ndarray, E: dict[str, np.ndarray]) -> tuple[np.ndarra
     return np.column_stack(feats), np.array([MIN_STD[k] if k != "iris" else MIN_STD["iris"] for k in kinds])
 
 
-MODELS = ["impact (actuel)", "impact + tête", "impact quadratique", "réseau + tête",
-          "impact + iris", "impact + tête + iris", "iris + tête (mode iris)"]
+MODELS = ["modèle actuel (VOR+centr.)", "impact seul", "impact + tête", "impact quadratique",
+          "réseau + tête", "impact + iris (brut)", "impact + tête + iris", "iris + tête (mode iris)"]
 
 
 def ridge_fit(X: np.ndarray, Y: np.ndarray, floor: np.ndarray, alpha: float):
@@ -107,22 +108,34 @@ def main() -> None:
     results = {}
     center = int(np.argmin(np.linalg.norm(targets - [sw / 2, sh / 2], axis=1)))
     for name in MODELS:
-        F, floor = build(name, G, E)
-        if not np.all(np.isfinite(F)):
-            continue
         err_frame = np.zeros(len(Y))
         err_smooth = np.zeros(len(Y))
         bias = np.zeros(len(targets))
-        for k in range(len(targets)):
-            tr, te = tid != k, tid == k
-            m = ridge_fit(F[tr], Y[tr], floor, args.alpha)
-            P = ridge_predict(m, F[te])
-            err_frame[te] = np.linalg.norm(P - Y[te], axis=1)
-            # Moyenne glissante ~0,5 s (≈ effet du filtre en fixation)
-            w = 15
-            Ps = np.array([P[max(0, i - w + 1): i + 1].mean(axis=0) for i in range(len(P))])
-            err_smooth[te] = np.linalg.norm(Ps - Y[te], axis=1)
-            bias[k] = np.linalg.norm(P.mean(axis=0) - Y[te][0])
+        if name.startswith("modèle actuel"):
+            for k in range(len(targets)):
+                tr, te = tid != k, tid == k
+                m = AffineGazeModel(mode="net", alpha=RIDGE_ALPHA["net"])
+                m.fit(G[tr], H[tr], Y[tr])
+                P = m._design(G[te], H[te]) @ m.weights
+                err_frame[te] = np.linalg.norm(P - Y[te], axis=1)
+                w = 15
+                Ps = np.array([P[max(0, i - w + 1): i + 1].mean(axis=0) for i in range(len(P))])
+                err_smooth[te] = np.linalg.norm(Ps - Y[te], axis=1)
+                bias[k] = np.linalg.norm(P.mean(axis=0) - Y[te][0])
+        else:
+            F, floor = build(name, G, E)
+            if not np.all(np.isfinite(F)):
+                continue
+            for k in range(len(targets)):
+                tr, te = tid != k, tid == k
+                m = ridge_fit(F[tr], Y[tr], floor, args.alpha)
+                P = ridge_predict(m, F[te])
+                err_frame[te] = np.linalg.norm(P - Y[te], axis=1)
+                # Moyenne glissante ~0,5 s (≈ effet du filtre en fixation)
+                w = 15
+                Ps = np.array([P[max(0, i - w + 1): i + 1].mean(axis=0) for i in range(len(P))])
+                err_smooth[te] = np.linalg.norm(Ps - Y[te], axis=1)
+                bias[k] = np.linalg.norm(P.mean(axis=0) - Y[te][0])
         r = (np.mean(px_to_deg(err_frame, sc)), np.mean(px_to_deg(err_smooth, sc)),
              np.mean(px_to_deg(bias, sc)), float(px_to_deg(np.array([bias[center]]), sc)[0]))
         results[name] = r

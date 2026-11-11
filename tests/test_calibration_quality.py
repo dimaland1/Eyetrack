@@ -14,8 +14,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from calibration import (  # noqa: E402
-    HEAD_PITCH_LEAKAGE_MM, HEAD_YAW_LEAKAGE_MM, AffineGazeModel, CalibrationManager,
-    classify_points, draw_intro, draw_review, evaluate_points, points_to_redo, quality_label,
+    HEAD_PITCH_LEAKAGE_MM, HEAD_YAW_LEAKAGE_MM, IRIS_PITCH_LEAKAGE_RAD, IRIS_YAW_LEAKAGE_RAD,
+    AffineGazeModel, CalibrationManager, classify_points, draw_intro, draw_review,
+    evaluate_points, points_to_redo, quality_label,
 )
 from face import GLARE_STRONG, FaceData, glare_label, glare_on_iris  # noqa: E402
 from geometry import ScreenConfig  # noqa: E402
@@ -191,8 +192,12 @@ class TestPrecisionPiste1(unittest.TestCase):
         G6, _, t6 = pts[6]
         H6 = np.column_stack([np.full(len(G6), 7.0), np.full(len(G6), 10.0)])
         G6_leaked = G6.copy()
-        G6_leaked[:, 0] += HEAD_YAW_LEAKAGE_MM * np.tan(np.radians(H6[:, 0]))
-        G6_leaked[:, 1] -= HEAD_PITCH_LEAKAGE_MM * np.tan(np.radians(H6[:, 1]))
+        yaw_tan = np.tan(np.radians(H6[:, 0]))
+        pitch_tan = np.tan(np.radians(H6[:, 1]))
+        G6_leaked[:, 0] += HEAD_YAW_LEAKAGE_MM * yaw_tan
+        G6_leaked[:, 1] -= HEAD_PITCH_LEAKAGE_MM * pitch_tan
+        G6_leaked[:, 2] -= IRIS_YAW_LEAKAGE_RAD * yaw_tan
+        G6_leaked[:, 3] -= IRIS_PITCH_LEAKAGE_RAD * pitch_tan
         pts[6] = (G6_leaked, H6, t6)
 
         errs, _, mean = evaluate_points("net", pts, SC)

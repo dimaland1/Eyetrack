@@ -35,8 +35,13 @@ RLS_EQUIV_SAMPLES = 15.0
 # le réseau réagit à 100 % aux rotations de la tête mais seulement partiellement aux contre-rotations
 # des yeux dans les orbites (réflexe vestibulo-oculaire). Ces distances effectives (mm) annulent le
 # glissement parasite du point d'impact quand la tête tourne à regard fixe.
-HEAD_YAW_LEAKAGE_MM = 500.0
+HEAD_YAW_LEAKAGE_MM = 550.0
 HEAD_PITCH_LEAKAGE_MM = 320.0
+# Les ratios d'iris (rx, ry) mesurent l'angle œil-dans-tête (et non regard-sur-écran) : quand la
+# tête tourne d'un angle θ vers une cible, l'œil tourne de -θ dans l'orbite. Ajouter θ * gain
+# ramène les ratios d'iris dans le repère écran et stabilise le calibrage tête + yeux mobiles.
+IRIS_YAW_LEAKAGE_RAD = 0.145
+IRIS_PITCH_LEAKAGE_RAD = -0.060
 # Part de bruit intra-cible conservée en mode 'net' après rejet MAD (évite le biais d'atténuation
 # Errors-in-Variables qui sous-pondérait le réseau, plus bruité d'une frame à l'autre que l'iris).
 TARGET_SHRINK_GAMMA = 0.15
@@ -84,8 +89,13 @@ class AffineGazeModel:
                 if len(H) == 1 and len(out) > 1:
                     H = np.tile(H, (len(out), 1))
                 if len(H) == len(out):
-                    out[:, 0] -= HEAD_YAW_LEAKAGE_MM * np.tan(np.radians(H[:, 0]))
-                    out[:, 1] += HEAD_PITCH_LEAKAGE_MM * np.tan(np.radians(H[:, 1]))
+                    yaw_tan = np.tan(np.radians(H[:, 0]))
+                    pitch_tan = np.tan(np.radians(H[:, 1]))
+                    out[:, 0] -= HEAD_YAW_LEAKAGE_MM * yaw_tan
+                    out[:, 1] += HEAD_PITCH_LEAKAGE_MM * pitch_tan
+                    if out.shape[1] >= 4:
+                        out[:, 2] += IRIS_YAW_LEAKAGE_RAD * yaw_tan
+                        out[:, 3] += IRIS_PITCH_LEAKAGE_RAD * pitch_tan
             return out
         rx = G[:, 0:1]
         ry = G[:, 1:2]

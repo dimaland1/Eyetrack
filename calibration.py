@@ -151,7 +151,9 @@ class AffineGazeModel:
         raw_fit, Y_fit, n_unique = self._denoise_targets(raw_all, Y_arr)
 
         self.feat_mean = raw_fit.mean(axis=0)
-        std = raw_fit.std(axis=0)
+        # Écart-type calculé sur la distribution réelle (non contractée) : évite de sur-amplifier
+        # en temps réel une feature bruitée d'une image à l'autre comme le réseau ONNX.
+        std = raw_all.std(axis=0)
         # Une feature qui a peu varié (ex. tête immobile) ne doit pas être amplifiée
         floor = np.asarray(MIN_FEATURE_STD.get(self.mode, [1e-6] * raw_fit.shape[1]), dtype=np.float64)
         self.feat_std = np.maximum(std, floor[: raw_fit.shape[1]])
@@ -161,11 +163,12 @@ class AffineGazeModel:
         n, k = phi_fit.shape
 
         if self.mode == "net" and k == 5:
-            # Régularisation directionnelle : évite que les termes croisés (ex. ratio vertical
-            # d'iris pollué par la paupière supérieure en bas d'écran) ne dévient l'autre axe.
+            # Régularisation directionnelle : sur X, priorité au ratio d'iris compensé de la tête
+            # (7x plus stable que le réseau) et blocage des termes croisés verticaux (hy, iry) qui
+            # déviaient le point horizontalement en haut d'écran.
             if n_unique >= 6:
-                pen_x = [1.0, 1.5, 1.0, 1.5, 0.0]
-                pen_y = [10.0, 1.0, 10.0, 2.5, 0.0]
+                pen_x = [2.5, 18.0, 0.4, 18.0, 0.0]
+                pen_y = [18.0, 1.0, 18.0, 2.5, 0.0]
             else:
                 pen_x = [5.0, 25.0, 5.0, 25.0, 0.0]
                 pen_y = [25.0, 5.0, 25.0, 10.0, 0.0]

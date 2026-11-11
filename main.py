@@ -327,6 +327,8 @@ def main() -> None:
     mirror_mode = not args.no_flip
     enable_recalib = not args.no_recalib
     current_gaze_px = (float(screen_w / 2), float(screen_h / 2))
+    overlay_gaze_px = (float(screen_w / 2), float(screen_h / 2))
+    prev_gaze_ts: float | None = None
     filtered_xyz = (0.0, 0.0, -60.0)
     filtered_ypr = (0.0, 0.0, 0.0)
     prev_mouse_down = False
@@ -540,6 +542,25 @@ def main() -> None:
                     filtered_gaze = gaze_filter.filter([clamped_gaze[0], clamped_gaze[1]], timestamp)
                     filtered_gaze = gaze_blender.update(filtered_gaze, timestamp)
                     current_gaze_px = (float(filtered_gaze[0]), float(filtered_gaze[1]))
+                    # Lissage adaptatif de l'overlay piloté par « Regard : lissage » (gaze_smoothing_s) :
+                    # maintient le point stable pendant une fixation tout en suivant vite les saccades.
+                    if prev_gaze_ts is None or not (0.0 < timestamp - prev_gaze_ts < 0.5):
+                        overlay_gaze_px = current_gaze_px
+                    else:
+                        dt_g = timestamp - prev_gaze_ts
+                        dx_o = current_gaze_px[0] - overlay_gaze_px[0]
+                        dy_o = current_gaze_px[1] - overlay_gaze_px[1]
+                        dist_o = float(np.hypot(dx_o, dy_o))
+                        tau_base = max(float(sender.config.gaze_smoothing_s), 0.02)
+                        # Saccade franche (> 180 px) : constante de temps réduite pour éviter la traînée
+                        saccade_boost = 1.0 + max(0.0, (dist_o - 90.0) / 70.0) ** 2
+                        tau_eff = max(0.025, tau_base / saccade_boost)
+                        a_o = 1.0 - float(np.exp(-dt_g / tau_eff))
+                        overlay_gaze_px = (
+                            overlay_gaze_px[0] + a_o * dx_o,
+                            overlay_gaze_px[1] + a_o * dy_o,
+                        )
+                    prev_gaze_ts = timestamp
             else:
                 # Visage perdu : on garde la dernière sortie lissée (filtered_xyz/ypr et
                 # current_gaze_px conservent leur valeur) et on note le début de la perte.
@@ -608,7 +629,7 @@ def main() -> None:
                     pass
 
             # Mise à jour de l'overlay transparent in-game (Étape 6)
-            overlay.update_gaze(current_gaze_px[0], current_gaze_px[1])
+            overlay.update_gaze(overlay_gaze_px[0], overlay_gaze_px[1])
 
             # Aperçu caméra du panneau (~10 images/s, seulement s'il est affiché)
             frame_count += 1

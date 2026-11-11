@@ -22,16 +22,28 @@ from paths import USER_MODELS_DIR
 # Poids pré-entraînés (yakhyo/gaze-estimation, entraînés sur Gaze360 : usage non commercial).
 # Jamais fournis avec Eyetrack : l'utilisateur les télécharge lui-même depuis la source officielle,
 # après avoir accepté leur licence (installeur ou bouton du panneau). Sans eux : mode 'iris'.
-MODEL_FILE = "mobileone_s0_gaze.onnx"
-MODEL_URL = "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx"
+MODEL_FILE = "mobilenetv2_gaze.onnx"
+FALLBACK_MODEL_FILE = "mobileone_s0_gaze.onnx"
+MODEL_URL = "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobilenetv2_gaze.onnx"
 MODEL_SOURCE = "https://github.com/yakhyo/gaze-estimation"
 # Empreinte du fichier attendu : un fichier modifié ou corrompu est refusé
-MODEL_SHA256 = "8b4fdc4e3da44733c9a82e7776b411e4a39f94e8e285aee0fc85a548a55f7d9f"
+MODEL_SHA256 = "b81312df85c7ac1c1b5f78c573620d22c2719cb839650e15f12dc7eecb7744a4"
 
 
 def gaze_model_path() -> str:
     """Emplacement du modèle de précision (dossier de l'utilisateur, pas le paquet)."""
-    return str(USER_MODELS_DIR / MODEL_FILE)
+    env_model = os.environ.get("EYETRACK_GAZE_MODEL", "").strip()
+    if env_model:
+        candidate = USER_MODELS_DIR / env_model
+        if os.path.isfile(candidate):
+            return str(candidate)
+    primary = USER_MODELS_DIR / MODEL_FILE
+    if os.path.isfile(primary):
+        return str(primary)
+    fallback = USER_MODELS_DIR / FALLBACK_MODEL_FILE
+    if os.path.isfile(fallback):
+        return str(fallback)
+    return str(primary)
 
 
 def gaze_model_available() -> bool:
@@ -175,6 +187,9 @@ class NetGazeEstimator:
         # Normalisation ImageNet standard
         self.mean = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 1, 3)
         self.std = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 1, 3)
+        # Pré-filtre temporel anti-pics sur les angles du réseau (médiane 3 images + lissage adaptatif)
+        self._angle_hist: list[tuple[float, float]] = []
+        self._angle_smooth: tuple[float, float] | None = None
 
     def _softmax(self, x: np.ndarray) -> np.ndarray:
         """Calcule le softmax numériquement stable sur l'axe 1."""
@@ -211,6 +226,27 @@ class NetGazeEstimator:
 
         yaw_deg = float(np.sum(yaw_probs * self.idx_tensor) * self._binwidth - self._angle_offset)
         pitch_deg = float(np.sum(pitch_probs * self.idx_tensor) * self._binwidth - self._angle_offset)
+
+        # Pré-filtrage temporel : rejette les sauts isolés (±8° sur 1 image dus au bruit MJPEG)
+        # tout en laissant passer immédiatement les vraies saccades (> 6° maintenus).
+        self._angle_hist.append((yaw_deg, pitch_deg))
+        if len(self._angle_hist) > 3:
+            self._angle_hist.pop(0)
+        med_yaw = float(np.median([a[0] for a in self._angle_hist]))
+        med_pitch = float(np.median([a[1] for a in self._angle_hist]))
+        if self._angle_smooth is None:
+            self._angle_smooth = (med_yaw, med_pitch)
+        else:
+            dyaw = med_yaw - self._angle_smooth[0]
+            dpitch = med_pitch - self._angle_smooth[1]
+            step = float(np.hypot(dyaw, dpitch))
+            # Gain adaptatif : 0.28 au repos (divise le bruit par ~3), monte à 0.85 sur saccade
+            alpha_net = min(0.85, 0.28 + 0.08 * max(0.0, step - 2.0))
+            self._angle_smooth = (
+                self._angle_smooth[0] + alpha_net * dyaw,
+                self._angle_smooth[1] + alpha_net * dpitch,
+            )
+        yaw_deg, pitch_deg = self._angle_smooth
 
         # Construction du vecteur unitaire 3D dans l'espace normalisé canonique
         # Convention OpenCV / MPIIGaze : regard vers l'écran = Z négatif (-1)

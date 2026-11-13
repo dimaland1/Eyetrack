@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Dossier Scientifique Eyetrack — Estimation du Regard RGB Temps Réel</title>
+<script>
+window.MathJax = { tex: { inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$']] } };
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  body { font-family: "Georgia", "Times New Roman", serif; line-height: 1.58; color: #1b1f23; max-width: 900px; margin: 2.5rem auto; padding: 0 1.5rem; }
+  h1, h2, h3 { font-family: "Segoe UI", Arial, sans-serif; color: #0f2c59; margin-top: 1.8rem; }
+  h1 { border-bottom: 2px solid #0f2c59; padding-bottom: 0.35rem; page-break-before: always; }
+  .chapter:first-of-type h1 { page-break-before: auto; }
+  code { font-family: Consolas, monospace; background: #f3f5f8; padding: 0.12rem 0.32rem; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #f6f8fa; padding: 0.9rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.88em; }
+  blockquote { border-left: 4px solid #2b6cb0; margin: 1rem 0; padding: 0.4rem 1rem; background: #f7fafc; }
+  table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: 0.92rem; }
+  th, td { border: 1px solid #d0d7de; padding: 0.45rem 0.65rem; text-align: left; }
+  th { background: #eef3f9; font-family: "Segoe UI", Arial, sans-serif; }
+  figure { text-align: center; margin: 1.4rem 0; }
+  figure img { max-width: 100%; height: auto; border: 1px solid #e1e4e8; border-radius: 4px; }
+  figcaption { font-size: 0.88rem; color: #57606a; margin-top: 0.4rem; font-style: italic; }
+  .toc { background: #f8fafc; border: 1px solid #dce3ec; padding: 1rem 1.4rem; border-radius: 6px; }
+  .toc ul { list-style: none; padding-left: 0; }
+  .toc-l1 { font-weight: bold; margin-top: 0.4rem; }
+  .toc-l2 { padding-left: 1.2rem; font-size: 0.95rem; }
+  .math-block { overflow-x: auto; margin: 0.8rem 0; }
+  .bib li { margin-bottom: 0.45rem; font-size: 0.92rem; }
+  @media print { body { max-width: none; margin: 1.5cm; } .toc { page-break-after: always; } }
+</style>
+</head>
+<body>
+<header>
+  <p style="text-transform:uppercase;letter-spacing:1px;color:#4a5568;font-family:sans-serif;font-size:0.85rem;">Dossier de Recherche Expérimentale &amp; Monographie Technique — Projet Eyetrack</p>
+</header>
+<nav class="toc"><h2>Table des matières</h2><ul><li class="toc-l1"><a href="#c0-0">Estimation du Regard Monoculaire RGB Temps Réel à partir d&#x27;un Unique Sujet : De l&#x27;Hyper-Personalisation Sous-1,5° à la Généralisation Différentielle sans Poids Non Commerciaux</a></li><li class="toc-l2"><a href="#c0-1">Résumé (Français)</a></li><li class="toc-l2"><a href="#c0-2">Abstract (English)</a></li><li class="toc-l2"><a href="#c0-3">Nomenclature mathématique unifiée</a></li><li class="toc-l2"><a href="#c0-4">Architecture du manuscrit et traçabilité logicielle</a></li><li class="toc-l1"><a href="#c1-0">Chapitre 1 — Introduction et Problématique Scientifique</a></li><li class="toc-l2"><a href="#c1-1">1.1 Contexte et motivation</a></li><li class="toc-l2"><a href="#c1-2">1.2 Analyse du problème physique et de l&#x27;existant <code>Eyetrack</code></a></li><li class="toc-l2"><a href="#c1-3">1.3 Problématique et hypothèses de recherche</a></li><li class="toc-l2"><a href="#c1-4">1.4 Synthèse des contributions</a></li><li class="toc-l1"><a href="#c2-0">Chapitre 2 — État de l&#x27;Art Critique et Analytique (2014–2026)</a></li><li class="toc-l2"><a href="#c2-1">2.1 Taxonomie des approches d&#x27;estimation du regard</a></li><li class="toc-l2"><a href="#c2-5">2.2 Synthèse chiffrée : intra-domaine vs généralisation inter-domaines</a></li><li class="toc-l2"><a href="#c2-6">2.3 Personnalisation few-shot, méthode différentielle et calibration implicite</a></li><li class="toc-l2"><a href="#c2-7">2.4 Filtrage adaptatif et budget temps réel</a></li><li class="toc-l2"><a href="#c2-8">2.5 Licences des jeux de données et propriété intellectuelle</a></li><li class="toc-l1"><a href="#c3-0">Chapitre 3 — Fondements Mathématiques et Architecture du Système <code>Eyetrack</code></a></li><li class="toc-l2"><a href="#c3-1">3.1 Repères et estimation de pose 6DoF sans repliement d&#x27;axes</a></li><li class="toc-l2"><a href="#c3-4">3.2 Normalisation projective de Zhang et al. (2018) et échelle métrique</a></li><li class="toc-l2"><a href="#c3-5">3.3 Estimation du regard et intersection rayon–plan écran</a></li><li class="toc-l2"><a href="#c3-8">3.4 Calibration affine régularisée Ridge et mise à jour séquentielle RLS</a></li><li class="toc-l2"><a href="#c3-9">3.5 Filtrage temporel médian + One Euro</a></li><li class="toc-l1"><a href="#c4-0">Chapitre 4 — Méthodologie d&#x27;Acquisition Solo et Protocoles Expérimentaux</a></li><li class="toc-l2"><a href="#c4-1">4.1 Extraction canonique des patchs binoculaires ($96 \times 48$)</a></li><li class="toc-l2"><a href="#c4-2">4.2 Protocole 1 : Poursuite oculaire lisse (<em>Smooth Pursuit</em>) et estimation du lag $\tau$</a></li><li class="toc-l2"><a href="#c4-5">4.3 Protocole 2 : Récolte passive pré-saccadique sur clics souris</a></li><li class="toc-l2"><a href="#c4-6">4.4 Règle stricte de partitionnement inter-sessions (anti-fuite temporelle)</a></li><li class="toc-l1"><a href="#c5-0">Chapitre 5 — Architectures Proposées : Du Modèle Personnel Sous-1,5° au Réseau Différentiel Transférable</a></li><li class="toc-l2"><a href="#c5-1">5.1 Principes de conception communs</a></li><li class="toc-l2"><a href="#c5-4">5.2 Scénario A : <code>DualEyePersonalNet</code> (Hyper-personnalisation)</a></li><li class="toc-l2"><a href="#c5-7">5.3 Scénario B : <code>DifferentialEyeNet</code> et randomisation morphologique</a></li><li class="toc-l1"><a href="#c6-0">Chapitre 6 — Résultats Expérimentaux, Ablations et Analyse Statistique</a></li><li class="toc-l2"><a href="#c6-1">6.1 Audit de la baseline réelle ($N = 405$, lunettes, écran $27''$ QHD)</a></li><li class="toc-l2"><a href="#c6-3">6.2 Sensibilité à la régularisation, carte spatiale et filtrage temporel</a></li><li class="toc-l2"><a href="#c6-4">6.3 Profilage temps réel CPU et gain architectural ($45\times$)</a></li><li class="toc-l2"><a href="#c6-5">6.4 Validation contrôlée des Scénarios A et B (banc paramétrique multi-sujets)</a></li><li class="toc-l2"><a href="#c6-8">6.5 Protocole exécutable de campagne webcam humaine (Phase finale)</a></li><li class="toc-l1"><a href="#c7-0">Chapitre 7 — Discussion Critique, Menaces à la Validité et Perspectives</a></li><li class="toc-l2"><a href="#c7-1">7.1 Validité interne, externe et limites du régime mono-sujet</a></li><li class="toc-l2"><a href="#c7-5">7.2 Enjeux juridiques et propriété intellectuelle</a></li><li class="toc-l2"><a href="#c7-6">7.3 Feuille de route vers l&#x27;intégration produit et la thèse finalisée</a></li><li class="toc-l2"><a href="#c7-7">7.4 Conclusion générale</a></li><li class="toc-l1"><a href="#bib">Bibliographie</a></li></ul></nav>
+<section class="chapter"><h1 id="c0-0">Estimation du Regard Monoculaire RGB Temps Réel à partir d&#x27;un Unique Sujet : De l&#x27;Hyper-Personalisation Sous-1,5° à la Généralisation Différentielle sans Poids Non Commerciaux</h1>
+<p><strong>Dossier de recherche expérimentale et monographie technique — Projet <code>Eyetrack</code></strong></p>
+<p>---</p>
+<h2 id="c0-1">Résumé (Français)</h2>
+<p>L&#x27;estimation du regard par webcam RGB grand public se heurte simultanément à deux verrous : un plafond de précision pratique autour de $3^\circ\text{--}4{,}5^\circ$ (dû notamment à la variabilité inter-individuelle de l&#x27;angle $\kappa$ et au couplage tête–œil) et une dépendance quasi universelle aux jeux de données publics sous licence strictement non commerciale (Gaze360, ETH-XGaze, MPIIFaceGaze, GazeCapture). Lorsque l&#x27;auteur d&#x27;un système ne dispose que de sa propre personne pour acquérir des données, ce régime mono-sujet pose deux problèmes symétriques : (A) comment exploiter l&#x27;identité unique pour descendre sous le seuil de $1{,}5^\circ$ en temps réel sur CPU, et (B) comment apprendre malgré tout un modèle distribuable généralisant à des utilisateurs inédits ?</p>
+<p>Ce dossier formalise, implémente et évalue expérimentalement une réponse unifiée sur la base du tracker <code>Eyetrack</code>. L&#x27;audit de la baseline réelle ($N = 405$ captures calibrées sur écran $2560 \times 1440$ à $60\text{ cm}$ avec verres correcteurs) révèle une erreur LOO-CV de $3{,}18^\circ$ en fixation ($4{,}40^\circ$ par image) et une latence de $11{,}16\text{ ms}$ pour le réseau plein-visage <code>MobileOne-S0</code>. Nous proposons : (1) un pipeline d&#x27;auto-collecte continue combinant poursuite oculaire lisse (<em>Smooth Pursuit</em>) compensée du retard visuo-moteur $\hat{\tau}_{\text{lag}}$ et capture passive pré-saccadique sur clics souris, (2) l&#x27;architecture légère <code>DualEyePersonalNet</code> ($70{,}5\text{ k}$ paramètres, patchs binoculaires alignés $48 \times 96$ avec <code>CoordConv2d</code> et pose 6DoF, $0{,}25\text{ ms}$ en ONNX CPU), et (3) l&#x27;architecture siamoise antisymétrique <code>DifferentialEyeNet</code> ($66{,}8\text{ k}$ paramètres) entraînée par paires différentielles en luminance normalisée avec randomisation morphologique des paupières pour le transfert inter-sujets $K$-ancres.</p>
+<p>---</p>
+<h2 id="c0-2">Abstract (English)</h2>
+<p>Consumer RGB webcam gaze tracking faces two simultaneous barriers: a practical accuracy ceiling around $3^\circ\text{--}4.5^\circ$ (driven by inter-subject $\kappa$-angle variability and head–eye coupling) and near-universal reliance on non-commercial public datasets (Gaze360, ETH-XGaze, MPIIFaceGaze, GazeCapture). When a single developer can only record their own face, this single-subject regime poses a dual scientific challenge: (A) how to leverage mono-identity training to break the $1.5^\circ$ barrier in real time on CPU, and (B) how to nonetheless learn a distributable model that generalizes to unseen users?</p>
+<p>This research monograph formalizes, implements, and empirically evaluates a unified architecture built upon the <code>Eyetrack</code> system. Auditing the real human baseline ($N = 405$ calibrated samples on a $2560 \times 1440$ display at $60\text{ cm}$ with eyeglasses) yields $3.18^\circ$ fixation LOO-CV error ($4.40^\circ$ per frame) and $11.16\text{ ms}$ CPU inference latency for full-face <code>MobileOne-S0</code>. We introduce: (1) a solo collection suite combining visuomotor-lag-compensated Smooth Pursuit and pre-saccadic passive mouse-click buffering, (2) <code>DualEyePersonalNet</code> ($70.5\text{k}$ parameters on $48 \times 96$ aligned binocular eye crops with <code>CoordConv2d</code> and 6DoF pose, $0.25\text{ ms}$ ONNX CPU), and (3) <code>DifferentialEyeNet</code> ($66.8\text{k}$ parameters), a structurally antisymmetric Siamese model trained on normalized grayscale eye pairs with morphological eyelid randomization for $K$-anchor cross-subject transfer.</p>
+<p>---</p>
+<h2 id="c0-3">Nomenclature mathématique unifiée</h2>
+<table>
+<thead><tr><th>Symbole</th><th>Signification</th><th>Unité / Domaine</th></tr></thead><tbody>
+<tr><td>$K \in \mathbb{R}^{3\times 3}$</td><td>Matrice intrinsèque estimée de la webcam</td><td>$\text{px}$</td></tr>
+<tr><td>$R_{\text{norm}} \in SO(3)$</td><td>Rotation de la caméra virtuelle canonique (Zhang 2018)</td><td>sans dimension</td></tr>
+<tr><td>$\mathbf{o}_{3\text{D}} \in \mathbb{R}^3$</td><td>Origine 3D estimée du centre facial/oculaire (repère caméra)</td><td>$\text{mm}$</td></tr>
+<tr><td>$D_{\text{iris}}$</td><td>Diamètre anatomique moyen de l&#x27;iris humain ($11{,}7$)</td><td>$\text{mm}$</td></tr>
+<tr><td>$(\psi, \theta, \phi)$</td><td>Angles d&#x27;Euler intrinsèques de la tête (<em>yaw, pitch, roll</em>)</td><td>$\text{deg}$</td></tr>
+<tr><td>$\kappa$</td><td>Écart angulaire individuel entre axe optique et axe visuel</td><td>$\text{deg}$</td></tr>
+<tr><td>$(I_L, I_R)$</td><td>Patchs oculaires alignés ($48 \times 96$) gauche et droit</td><td>$\text{uint8} / \mathbb{R}$</td></tr>
+<tr><td>$\tau_{\text{lag}}$</td><td>Retard visuo-moteur en poursuite lisse</td><td>$\text{ms}$</td></tr>
+<tr><td>$\alpha, \lambda$</td><td>Paramètre Ridge et facteur d&#x27;oubli RLS</td><td>sans dimension</td></tr>
+<tr><td>$\varepsilon_{\text{vis}}$</td><td>Erreur angulaire visuelle 3D exacte depuis $\mathbf{o}_{3\text{D}}$</td><td>$\text{deg}$</td></tr>
+</tbody>
+</table>
+<p>---</p>
+<h2 id="c0-4">Architecture du manuscrit et traçabilité logicielle</h2>
+<table>
+<thead><tr><th>Chapitre</th><th>Objet scientifique</th><th>Modules / Artefacts associés</th></tr></thead><tbody>
+<tr><td><strong>Chapitre 1</strong></td><td>Problématique, limites existantes, hypothèses $H_1$–$H_3$</td><td><code>README.md</code>, <code>docs/these/01_introduction_problematique.md</code></td></tr>
+<tr><td><strong>Chapitre 2</strong></td><td>État de l&#x27;art critique (2014–2026), SOTA, licences &amp; brevets</td><td><code>docs/etat_de_l_art.md</code>, <code>references.bib</code></td></tr>
+<tr><td><strong>Chapitre 3</strong></td><td>Formalisme mathématique complet d&#x27;<code>Eyetrack</code></td><td><code>face.py</code>, <code>normalize.py</code>, <code>gaze_model.py</code>, <code>geometry.py</code>, <code>calibration.py</code>, <code>filters.py</code></td></tr>
+<tr><td><strong>Chapitre 4</strong></td><td>Protocoles d&#x27;acquisition solo (Smooth Pursuit, clics, anti-fuite)</td><td><code>research/eye_crop.py</code>, <code>research/lag_estimation.py</code>, <code>research/collect_pursuit.py</code>, <code>research/collect_clicks.py</code></td></tr>
+<tr><td><strong>Chapitre 5</strong></td><td>Architectures <code>DualEyePersonalNet</code> (A) et <code>DifferentialEyeNet</code> (B)</td><td><code>research/models.py</code>, <code>research/augmentations.py</code>, <code>research/train.py</code></td></tr>
+<tr><td><strong>Chapitre 6</strong></td><td>Résultats expérimentaux, ablations, statistiques et latence CPU</td><td><code>research/analyze_existing_data.py</code>, <code>research/run_synthetic_ablations.py</code>, <code>research/evaluate.py</code></td></tr>
+<tr><td><strong>Chapitre 7</strong></td><td>Discussion critique, menaces à la validité et feuille de route</td><td><code>docs/these/07_discussion_limites_et_perspectives.md</code></td></tr>
+</tbody>
+</table></section><section class="chapter"><h1 id="c1-0">Chapitre 1 — Introduction et Problématique Scientifique</h1>
+<h2 id="c1-1">1.1 Contexte et motivation</h2>
+<p>Le suivi du regard (<em>eye tracking</em>) et de la posture crânienne (<em>head tracking</em> à six degrés de liberté, 6DoF) constitue une modalité d&#x27;interaction homme-machine majeure dans la simulation aéronautique et automobile, l&#x27;accessibilité, l&#x27;ergonomie cognitive et la réalité étendue. Historiquement, les solutions de précision inférieure au degré angulaire reposent sur des capteurs infrarouges actifs exploitant le principe PCCR (<em>Pupil Center Corneal Reflection</em>), tels que les systèmes Tobii (environ $0{,}67^\circ$ à $< 1^\circ$ en conditions contrôlées). Cette précision matérielle s&#x27;accompagne toutefois d&#x27;un coût dédié, d&#x27;une sensibilité extérieure aux rayons infrarouges solaires et d&#x27;une absence d&#x27;ubiquité sur les postes bureautiques existants.</p>
+<p>À l&#x27;inverse, l&#x27;estimation du regard par simple webcam RGB grand public (par exemple une Logitech C920 à $1280 \times 720$ ou $1920 \times 1080$ pixels) démocratise l&#x27;accès au suivi oculo-céphalique. En pratique, l&#x27;état de l&#x27;art commercial (Eyeware Beam, fondé sur la lignée scientifique EPFL/Idiap) revendique $1{,}5^\circ$ dans des conditions idéales après calibration à 5 points, tandis que les évaluations académiques indépendantes placent la majorité des trackers webcam non contrôlés entre $2{,}3^\circ$ et $4{,}5^\circ$.</p>
+<p>Au-delà de la barre algorithmique, l&#x27;écosystème du <em>deep learning</em> appliqué au regard souffre d&#x27;un <strong>verrou structurel et juridique</strong> souvent ignoré : la quasi-totalité des grands jeux de données publics de référence — MPIIGaze / MPIIFaceGaze, GazeCapture, ETH-XGaze, Gaze360, EYEDIAP et EVE — sont distribués sous licence <strong>strictement non commerciale</strong> (CC BY-NC-SA ou accords académiques restrictifs). Or, dès qu&#x27;un modèle neuronal est entraîné sur ces données, ses poids héritent généralement de la restriction non commerciale, empêchant toute distribution libre ou commerciale d&#x27;un logiciel autonome, comme nous avons dû l&#x27;appliquer dans la conception même du projet <code>Eyetrack</code> (téléchargement séparé et optionnel de <code>mobileone_s0_gaze.onnx</code>).</p>
+<h2 id="c1-2">1.2 Analyse du problème physique et de l&#x27;existant <code>Eyetrack</code></h2>
+<p>Le projet logiciel <code>Eyetrack</code> implémente déjà un pipeline modulaire complet temps réel vers OpenTrack (UDP 120 Hz) combinant :</p>
+<ol>
+<li>L&#x27;extraction de 478 points faciaux (dont les contours et centres iriens) et d&#x27;une matrice de pose rigide via MediaPipe FaceLandmarker (<code>face.py</code>) ;</li>
+<li>Une normalisation projective vers une caméra virtuelle canonique à $600\text{ mm}$ selon Zhang et al. (2018) (<code>normalize.py</code>, focale virtuelle calibrée expérimentalement à $1900\text{ px}$ sur patch $448 \times 448$) ;</li>
+<li>Un estimateur hybride combinant <code>MobileOne-S0</code> (ONNX, entraîné sur Gaze360) et ratios géométriques iriens (<code>gaze_model.py</code>), projetés sur le plan écran (<code>geometry.py</code>) ;</li>
+<li>Une calibration affine régularisée Ridge sur 5 ou 9 points avec validation croisée <em>Leave-One-Target-Out</em> (LOO-CV), détection des reflets de verres correcteurs et adaptation en ligne par moindres carrés récursifs (RLS) sur clics souris (<code>calibration.py</code>) ;</li>
+<li>Un pré-filtrage médian couplé à un filtre adaptatif One Euro (<code>filters.py</code>).</li>
+</ol>
+<p>L&#x27;audit empirique de cette architecture de référence sur des données réelles capturées avec verres correcteurs ($N = 405$ échantillons, écran $2560 \times 1440$ de $27''$ à $60\text{ cm}$, diamètre irien médian de $20{,}5\text{ px}$) met en évidence <strong>trois limitations fondamentales</strong> :</p>
+<ul>
+<li><strong>Plafond de précision post-calibration</strong> : le meilleur modèle linéaire basé sur l&#x27;existant atteint $3{,}18^\circ$ en fixation ($0{,}5\text{ s}$) et $4{,}40^\circ$ image par image en LOO-CV (avec dégradation nette dans les coins jusqu&#x27;à $7{,}40^\circ$), soit plus du double de l&#x27;objectif de $1{,}5^\circ$.</li>
+<li><strong>Coût de latence CPU du backbone plein-visage</strong> : l&#x27;inférence de <code>MobileOne-S0</code> à résolution $448 \times 448$ consomme à elle seule $11{,}16\text{ ms}$ en moyenne sur CPU ($p_{95} = 12{,}81\text{ ms}$), occupant environ $67\,\%$ du budget temps réel à $60\text{ Hz}$ ($16{,}67\text{ ms}$).</li>
+<li><strong>Couplage statistique et dépendance NC</strong> : l&#x27;ajout des angles de pose crânienne dans une calibration statique à 9 points dégrade l&#x27;erreur LOO-CV de $3{,}18^\circ$ à $5{,}25^\circ$ par sur-ajustement de colinéarités locales, tandis que le réseau générique reste soumis aux licences non commerciales de Gaze360.</li>
+</ul>
+<h2 id="c1-3">1.3 Problématique et hypothèses de recherche</h2>
+<p>Ce dossier de recherche pose la problématique unifiée suivante :</p>
+<blockquote>
+<p><strong>Problématique centrale :</strong> <em>Comment concevoir, collecter et entraîner un système d&#x27;estimation du regard monoculaire RGB temps réel sur CPU lorsque l&#x27;on ne dispose que d&#x27;un seul sujet humain (l&#x27;auteur du système), tout en répondant simultanément à deux régimes antagonistes : l&#x27;hyper-personnalisation sous-1,5° (Scénario A) et la généralisation inter-sujets distribuable sans poids non commerciaux (Scénario B) ?</em></p>
+</blockquote>
+<p>Nous formulons trois hypothèses scientifiques testables :</p>
+<ul>
+<li><strong>Hypothèse $H_1$ (Acquisition continue mono-sujet et compensation du retard visuo-moteur) :</strong> L&#x27;échantillonnage discret par grille fixe (9 points) sous-échantillonne l&#x27;espace combiné <em>(regard $\times$ pose 6DoF)</em> et favorise le surapprentissage de la pose crânienne. Une collecte continue par <strong>poursuite oculaire lisse (<em>Smooth Pursuit</em>)</strong> couplée à une <strong>récolte passive pré-saccadique sur clics souris</strong> (tampon circulaire compensé à $t_{\text{clic}} - \tau_{\text{pre}}$) permet d&#x27;acquérir un ordre de grandeur supérieur d&#x27;échantillons variés ($10^3$–$10^4$ frames en quelques minutes), à condition d&#x27;estimer et de compenser explicitement le retard visuo-moteur $\tau_{\text{lag}}$ ($\approx 60\text{--}100\text{ ms}$).</li>
+<li><strong>Hypothèse $H_2$ (Découplage spatial bi-oculaire léger pour le Scénario A) :</strong> Remplacer l&#x27;entrée plein-visage $448 \times 448$ par deux patchs oculaires alignés sur les commissures ($2 \times 48 \times 96$) munis d&#x27;un encodage spatial explicite (<code>CoordConv</code>) et fusionnés avec un vecteur géométrique 6DoF réduit la latence d&#x27;inférence d&#x27;un facteur $> 30\times$ sur CPU tout en empêchant la mémorisation de l&#x27;arrière-plan, ouvrant l&#x27;accès au régime $< 1{,}5^\circ$ spécifique à l&#x27;utilisateur.</li>
+<li><strong>Hypothèse $H_3$ (Représentation différentielle et randomisation morphologique pour le Scénario B) :</strong> Un réseau direct entraîné sur un unique sujet $S_0$ mémorise irrémédiablement l&#x27;anatomie palpébrale et l&#x27;angle $\kappa$ de $S_0$, échouant sur des sujets inédits $S_k$. En revanche, une architecture <strong>siamoise différentielle</strong> prédisant la variation relative $\Delta\mathbf{g}(q, r) = \mathbf{g}(q) - \mathbf{g}(r)$ sur patchs normalisés en luminance avec <strong>antisymétrie structurelle</strong> ($f(q,r)=-f(r,q)$) et <strong>déformations morphologiques synthétiques</strong> (étirement palpébral, gamma, bruit capteur, reflets) permet de transférer les connaissances apprises sur un seul sujet vers des anatomies et des angles $\kappa$ inconnus avec seulement $K \in \{1, 5\}$ ancres de calibration.</li>
+</ul>
+<h2 id="c1-4">1.4 Synthèse des contributions</h2>
+<p>Les travaux présentés dans ce dossier apportent les contributions suivantes :</p>
+<ol>
+<li><strong>Formalisation mathématique unifiée</strong> du pipeline hybride complet (projection de Zhang 2018, décomposition Euler $R_y R_x R_z$ sans repliement, géométrie métrique par diamètre irien, régression Ridge planchéisée, mise à jour RLS, filtrage médian + One Euro).</li>
+<li><strong>Audit expérimental complet de la baseline réelle</strong> ($N=405$ captures réelles avec lunettes, validation croisée LOO-CV, analyse d&#x27;asymétrie yaw/pitch, balayage de régularisation $\alpha$, profilage CPU exact).</li>
+<li><strong>Suite logicielle de collecte solo</strong> (<code>research/collect_pursuit.py</code>, <code>research/collect_clicks.py</code>, <code>research/lag_estimation.py</code>, <code>research/eye_crop.py</code>) intégrant alignement binoculaire $96 \times 48$, estimation du lag par validation croisée temporelle et tampon circulaire pré-clic.</li>
+<li><strong>Deux architectures neuronales légères (~67–71 k paramètres, export ONNX $< 0{,}25\text{ ms}$ CPU)</strong> : <code>DualEyePersonalNet</code> (Scénario A) et <code>DifferentialEyeNet</code> (Scénario B), évaluées sur banc paramétrique contrôlé multi-sujets et prêtes pour la campagne d&#x27;acquisition webcam multi-sessions.</li>
+</ol></section><section class="chapter"><h1 id="c2-0">Chapitre 2 — État de l&#x27;Art Critique et Analytique (2014–2026)</h1>
+<p>Ce chapitre synthétise l&#x27;évolution scientifique de l&#x27;estimation du regard monoculaire sans éclairage infrarouge (<em>appearance-based</em> et hybride), en mettant en regard les avancées architecturales, le goulot d&#x27;étranglement de la généralisation de domaine, les méthodes de calibration peu coûteuses en annotations (<em>few-shot</em> et implicite) et les contraintes juridiques de distribution.</p>
+<h2 id="c2-1">2.1 Taxonomie des approches d&#x27;estimation du regard</h2>
+<p>Trois paradigmes structurent la littérature du suivi oculaire distant :</p>
+<h3 id="c2-2">2.1.1 Méthodes géométriques pures et modèles 3D de l&#x27;œil</h3>
+<p>Les trackers infrarouges dédiés (Tobii T60 à $0{,}67^\circ$ selon Skovsgaard et al., 2011 ; Tobii 4C $< 1^\circ$) exploitent le principe actif PCCR (<em>Pupil Center Corneal Reflection</em>) : des diodes infrarouges créent un ou plusieurs reflets cornéens (images de Purkinje) stables vis-à-vis de l&#x27;axe optique, permettant de trianguler l&#x27;orientation du globe indépendamment des translations de tête.</p>
+<p>En lumière visible pure (webcam RGB), deux voies géométriques existent :</p>
+<ol>
+<li><strong>Les ratios géométriques locaux</strong> (ex. <code>GazeTracking</code>, ou le mode <code>iris</code> d&#x27;<code>Eyetrack</code> basé sur les 478 points MediaPipe) : le centre irien est rapporté aux commissures externe/interne et aux bords palpébraux. Si la détection requiert peu de calcul ($< 0{,}01\text{ ms}$ post-landmarks), un iris à $60\text{ cm}$ en 720p ne mesure qu&#x27;environ $20\text{ px}$ (ou $\sim 10\text{ px}$ en 480p), rendant le rapport vertical particulièrement vulnérable aux clignements, aux occlusions palpébrales lors du regard vers le bas et aux variations de pose de tête.</li>
+<li><strong>Les modèles génératifs 3D du globe oculaire</strong> : représentés notamment par les travaux de l&#x27;Idiap (Funes Mora &amp; Odobez, G3E 2014 ; IJCV 2016 ; brevet WO2015192879A1), ils estiment le centre du globe, son rayon, la direction de l&#x27;axe optique et la correction anatomique vers l&#x27;axe visuel (angle $\kappa$). Leur qualité d&#x27;interprétabilité est élevée, mais leur convergence se dégrade en présence de reflets spéculaires sur verres correcteurs ou de flou de mouvement.</li>
+</ol>
+<h3 id="c2-3">2.1.2 Méthodes basées apparence de bout en bout</h3>
+<p>Les réseaux profonds apprennent directement une fonction $f_\theta : I \mapsto \mathbf{g}$ :</p>
+<ul>
+<li><strong>Entrées œil seul ou multi-régions</strong> : <em>iTracker</em> / GazeCapture (Krafka et al., CVPR 2016) associe les deux patchs oculaires, le visage et un masque binaire de grille faciale pour prédire directement un point 2D à l&#x27;écran en centimètres ($1{,}71\text{ cm}$ sur téléphone sans calibration, $1{,}34\text{ cm}$ avec calibration). <em>FullFace</em> (Zhang et al., CVPRW 2017) introduit une pondération spatiale sur le visage entier ($4{,}80^\circ$ sur MPIIFaceGaze). <em>CA-Net</em> (Cheng et al., AAAI 2020) adopte une architecture <em>coarse-to-fine</em> combinant visage et yeux ($4{,}10^\circ$ sur MPIIFaceGaze).</li>
+<li><strong>Backbones et têtes angulaires</strong> : <em>Gaze360</em> (Kellnhofer et al., ICCV 2019) introduit un modèle temporel LSTM sur 7 frames prédisant direction et incertitude ($4{,}06^\circ$ sur MPIIGaze, $11{,}04^\circ$ sur Gaze360). <em>L2CS-Net</em> (Abdelrahman et al., 2022/2023) remplace la régression pure par une prédiction conjointe classification discrétisée (90 classes de $4^\circ$) + espérance continue par axe, atteignant $3{,}92^\circ$ sur MPIIGaze. <em>GazeTR-Hybrid</em> (Cheng &amp; Lu, ICPR 2022) associe ResNet et Transformer ($4{,}00^\circ$ sur MPIIFaceGaze, $11{,}4\text{ M}$ paramètres, $1{,}83\text{ GFLOPs}$). <em>MobileGaze</em> (<code>yakhyo/gaze-estimation</code>) transpose ce principe sur des backbones mobiles dont <code>MobileOne-S0</code> ($4{,}8\text{ Mo}$ ONNX, $12{,}58^\circ$ sur Gaze360).</li>
+</ul>
+<h3 id="c2-4">2.1.3 Méthodes hybrides et normalisation projective</h3>
+<p>Proposée par Sugano et al. (CVPR 2014) et formalisée par Zhang et al. (ETRA 2018), la <strong>normalisation géométrique des données</strong> ramène chaque visage dans le repère d&#x27;une caméra virtuelle canonique pointée vers le centre facial à distance constante ($600\text{ mm}$), l&#x27;axe horizontal aligné sur les yeux. La révision de 2018 montre qu&#x27;en ne transformant le vecteur de regard que par la rotation pure $R_{\text{norm}}$ (sans appliquer la matrice d&#x27;échelle $S$ au vecteur directionnel), la précision s&#x27;améliore nettement.</p>
+<p>On distingue deux paramétrisations de sortie (Cheng et al., TPAMI 2024) :</p>
+<ul>
+<li><strong>Point de regard 2D (PoG)</strong> : lié à une géométrie capteur-écran fixe (ex. caméra coplanaire de tablette/smartphone).</li>
+<li><strong>Direction 3D canonique</strong> ($\text{pitch}, \text{yaw}$) couplée à une origine 3D oculaire : indépendante du moniteur, elle permet l&#x27;intersection géométrique rayon–plan sur n&#x27;importe quel écran de bureau.</li>
+</ul>
+<h2 id="c2-5">2.2 Synthèse chiffrée : intra-domaine vs généralisation inter-domaines</h2>
+<table>
+<thead><tr><th>Modèle / Travail</th><th>MPIIFaceGaze / MPIIGaze</th><th>EYEDIAP</th><th>Gaze360</th><th>Remarque méthodologique</th></tr></thead><tbody>
+<tr><td>FullFace (Zhang et al., 2017)</td><td>$4{,}80^\circ$</td><td>—</td><td>—</td><td>Visage complet, pondération spatiale</td></tr>
+<tr><td>Gaze360 (Kellnhofer et al., 2019)</td><td>$4{,}06^\circ$</td><td>$5{,}36^\circ$</td><td>$11{,}04^\circ$</td><td>LSTM 7 frames + incertitude</td></tr>
+<tr><td>CA-Net (Cheng et al., 2020)</td><td>$4{,}10^\circ$</td><td>$5{,}27^\circ$</td><td>$12{,}26^\circ$</td><td>Raffinement visage $\to$ yeux</td></tr>
+<tr><td>GazeTR-Hybrid (Cheng &amp; Lu, 2022)</td><td>$4{,}00^\circ$</td><td>$5{,}17^\circ$</td><td>$10{,}62^\circ$</td><td>Hybride CNN + Transformer ($11{,}4\text{ M}$ params)</td></tr>
+<tr><td>L2CS-Net (Abdelrahman et al., 2022)</td><td>$3{,}92^\circ$</td><td>—</td><td>$10{,}41^\circ$</td><td>Classification discrétisée + régression</td></tr>
+<tr><td>OmniGaze (Qu et al., NeurIPS 2025)</td><td>$2{,}97^\circ$</td><td>$4{,}07^\circ$</td><td>$9{,}12^\circ$</td><td>Semi-supervisé, pseudo-labels + reward MLLM</td></tr>
+<tr><td>ETH-XGaze baseline (cross depuis XGaze)</td><td>$7{,}5^\circ$</td><td>$11{,}0^\circ$</td><td>$27{,}3^\circ$</td><td>Effondrement hors domaine</td></tr>
+<tr><td>UniGaze-H (Qin et al., WACV 2026, LODO)</td><td>$4{,}51^\circ$</td><td>$5{,}88^\circ$</td><td>$12{,}37^\circ$</td><td>ViT-H ($632\text{ M}$ params), pré-entraînement MAE $1{,}6\text{ M}$</td></tr>
+</tbody>
+</table>
+<p>Deux résultats récents orientent directement notre conception :</p>
+<ol>
+<li><strong>Le gouffre intra/inter-domaines</strong> : entre 2017 et 2022, les gains d&#x27;architecture intra-dataset ne représentent que quelques dixièmes de degré ($4{,}80^\circ \to 3{,}92^\circ$), alors que le transfert hors domaine chute entre $5^\circ$ et $12^\circ$ (voire $27{,}3^\circ$). À $60\text{ cm}$, $4^\circ$ équivalent à $4{,}2\text{ cm}$ sur l&#x27;écran et $6\text{--}12^\circ$ à $6{,}3\text{--}12{,}8\text{ cm}$.</li>
+<li><strong>Vulnérabilité aux lunettes et asymétrie du pitch</strong> : l&#x27;étude de Li et al. (Huawei Canada, arXiv:2603.26945, 2026) démontre que même les modèles massifs comme UniGaze-H ($632\text{ M}$ paramètres, incompatibles CPU temps réel) chutent avec lunettes, masques ou faible luminosité, et que l&#x27;erreur verticale (<em>pitch</em>) diverge davantage entre datasets que l&#x27;erreur horizontale (<em>yaw</em>). Leur réponse combine des augmentations synthétiques ciblées (lunettes, bruit capteur, éclairage) et un backbone MobileNet compact atteignant une généralisation compétitive avec moins de $1\,\%$ des paramètres d&#x27;UniGaze-H.</li>
+</ol>
+<h2 id="c2-6">2.3 Personnalisation few-shot, méthode différentielle et calibration implicite</h2>
+<p>La limite fondamentale d&#x27;un modèle générique non calibré provient de l&#x27;<strong>angle kappa</strong> ($\kappa$), l&#x27;écart anatomique individuel entre l&#x27;axe optique du globe (centré sur la pupille/iris) et l&#x27;axe visuel passant par la fovéa. Cet angle varie typiquement jusqu&#x27;à $\pm 5^\circ$ selon les individus et ne peut être observé sur une image externe sans calibration.</p>
+<p>Trois familles de solutions adressent ce verrou :</p>
+<ul>
+<li><strong>Méta-apprentissage few-shot</strong> : <em>FAZE</em> (Park et al., ICCV 2019) apprend un espace latent équivariant en rotation combiné à MAML, descendant à $3{,}18^\circ$ sur GazeCapture avec seulement $k = 3$ échantillons. <em>MTGLS</em> passe de $5{,}02^\circ$ à $2{,}22^\circ$ sur MPIIGaze avec 200 échantillons de calibration.</li>
+<li><strong>Approche différentielle</strong> : proposée par Liu, Yu, Funes Mora &amp; Odobez (BMVC 2018), au lieu d&#x27;estimer un angle absolu $\mathbf{g}(I_t)$, un réseau siamois estime la <strong>différence</strong> $\Delta\mathbf{g} = \mathbf{g}(I_t) - \mathbf{g}(I_{\text{ref}})$ entre l&#x27;image courante et une ou plusieurs images de calibration de référence. En éliminant l&#x27;offset individuel et une part de la géométrie statique par différence relative, cette formulation se prête naturellement au transfert depuis peu d&#x27;échantillons ou peu de sujets.</li>
+<li><strong>Calibration implicite continue</strong> : <em>WebGazer</em> (Papoutsaki et al., IJCAI 2016) ajuste une régression Ridge sur les pixels oculaires à chaque clic ou mouvement de curseur ($4{,}17^\circ$). <em>Online-EYE</em> (CHI 2025) met à jour la calibration par moindres carrés récursifs (RLS) toutes les trois interactions, convergeant après 8 à 9 clics. <em>Tri-Cam</em> (2024) modélise explicitement la désynchronisation entre regard et curseur lors des clics.</li>
+</ul>
+<h2 id="c2-7">2.4 Filtrage adaptatif et budget temps réel</h2>
+<p>Pour la restitution interactive, Casiez et al. (CHI 2012) introduisent le filtre <strong>One Euro</strong> ($1\text{€}$), un passe-bas du premier ordre dont la fréquence de coupure croît linéairement avec la vitesse estimée du signal. Ce mécanisme supprime les micro-oscillations pendant les fixations tout en préservant la réactivité lors des saccades oculaires. En revanche, comme l&#x27;implémentation d&#x27;<code>Eyetrack</code> l&#x27;a mis en évidence (<code>filters.py</code>), des pics isolés d&#x27;erreur neuronale ouvrent artificiellement la bande passante du filtre One Euro via la dérivée estimée — justifiant l&#x27;insertion préalable d&#x27;un court filtre médian ($w=3$).</p>
+<h2 id="c2-8">2.5 Licences des jeux de données et propriété intellectuelle</h2>
+<table>
+<thead><tr><th>Ressource</th><th>Volume</th><th>Licence</th><th>Usage commercial</th></tr></thead><tbody>
+<tr><td>MPIIGaze / MPIIFaceGaze</td><td>15 sujets, ~45k visages</td><td>CC BY-NC-SA 4.0</td><td>Non</td></tr>
+<tr><td>GazeCapture</td><td>1 474 sujets, ~2M frames</td><td>Research purposes only</td><td>Non</td></tr>
+<tr><td>ETH-XGaze</td><td>110 sujets, $>1\text{M}$ images</td><td>CC BY-NC-SA 4.0</td><td>Non</td></tr>
+<tr><td>Gaze360</td><td>238 sujets, ~172k images</td><td>Non-commercial research only</td><td>Non</td></tr>
+<tr><td>EYEDIAP</td><td>16 sujets, RGB + RGB-D</td><td>EULA non commercial</td><td>Non</td></tr>
+<tr><td>EVE</td><td>54 sujets, $>12\text{M}$ frames</td><td>CC BY-NC-SA 4.0 (code MIT)</td><td>Non</td></tr>
+<tr><td>UniGaze (poids)</td><td>ViT B/L/H</td><td>ModelGo MG-NC-RAI-2.0</td><td>Non</td></tr>
+<tr><td>MediaPipe FaceLandmarker</td><td>478 landmarks</td><td>Apache 2.0</td><td>Oui</td></tr>
+</tbody>
+</table>
+<p>Parallèlement, les brevets EPFL/Idiap et Eyeware Tech SA (EP3154407B1, EP3953859B1 sur l&#x27;estimation de paramètres géométriques oculaires personnels, WO2022084803A1 sur l&#x27;auto-calibration) soulignent l&#x27;intérêt scientifique et industriel d&#x27;une architecture <strong>entièrement entraînée sur données propriétaires ou permissives</strong> sans réutilisation de poids non commerciaux.</p>
+<p>C&#x27;est précisément ce double constat — <strong>nécessité de personnalisation sous-$1{,}5^\circ$ (Scénario A)</strong> et <strong>contrainte d&#x27;indépendance vis-à-vis des datasets NC lorsqu&#x27;on ne dispose que d&#x27;un seul sujet (Scénario B)</strong> — qui fonde les contributions développées dans les chapitres suivants.</p></section><section class="chapter"><h1 id="c3-0">Chapitre 3 — Fondements Mathématiques et Architecture du Système <code>Eyetrack</code></h1>
+<p>Ce chapitre formalise rigoureusement chaque étape géométrique, statistique et algorithmique implémentée dans la plateforme de base <code>Eyetrack</code> (<code>face.py</code>, <code>normalize.py</code>, <code>gaze_model.py</code>, <code>geometry.py</code>, <code>calibration.py</code>, <code>filters.py</code>), en précisant les repères de coordonnées et les conventions d&#x27;orientation vérifiés par la suite de tests unitaires.</p>
+<h2 id="c3-1">3.1 Repères et estimation de pose 6DoF sans repliement d&#x27;axes</h2>
+<p>Soit une image webcam acquise au format $W \times H$ (typiquement $1280 \times 720$ en flux MJPG à $30\text{--}60\text{ Hz}$). MediaPipe FaceLandmarker extrait un ensemble de 478 points caractéristiques $\mathbf{p}_i = (u_i, v_i)^\top \in \mathbb{R}^2$ (dont les contours iriens et centres $\mathbf{p}_{468}, \mathbf{p}_{473}$) ainsi qu&#x27;une matrice de transformation rigide $M_{\text{MP}} \in \mathbb{R}^{4\times 4}$.</p>
+<h3 id="c3-2">3.1.1 Extraction orthogonale et ordre d&#x27;Euler intrinsèque</h3>
+<p>Pour éliminer toute composante d&#x27;échelle résiduelle dans la sous-matrice $M_{3\times 3}$, la rotation pure est obtenue par décomposition en valeurs singulières (<code>face.py:pose_from_matrix</code>) :</p>
+<div class="math-block">$$M_{3\times 3} = U \Sigma V^\top \implies R = U V^\top$$</div>
+<p>Contrairement à une décomposition $X$-$Y$-$Z$ classique (type <code>cv2.RQDecomp3x3</code>), qui induit un couplage parasite (<em>cross-talk</em>) entre lacet et tangage dès que la tête pivote (ex. $+40^\circ$ en <em>yaw</em> puis $+15^\circ$ en <em>roll</em> créant un faux <em>pitch</em>), la factorisation dans l&#x27;ordre intrinsèque OpenTrack $R = R_y(\psi) R_x(\theta) R_z(\phi)$ garantit l&#x27;indépendance des axes :</p>
+<div class="math-block">$$\begin{aligned}
+\psi &= \operatorname{atan2}(R_{0,2}, R_{2,2}), \\
+\theta &= \arcsin\!\big(\operatorname{clip}(-R_{1,2}, -1, 1)\big), \qquad
+\phi = \operatorname{atan2}(R_{1,0}, R_{1,1})
+\end{aligned}$$</div>
+<p>La translation $\mathbf{t}_{\text{cm}} = (M_{0,3}, M_{1,3}, M_{2,3})^\top$ exprime la position crânienne en centimètres.</p>
+<h3 id="c3-3">3.1.2 Détection de clignements et quantification des reflets</h3>
+<p>L&#x27;ouverture oculaire instantanée $o_t$ est définie par la moyenne bilatérale du ratio hauteur palpébrale sur largeur inter-commissurale :</p>
+<div class="math-block">$$o_t = \frac{1}{2} \sum_{e \in \{L, R\}} \frac{\|\mathbf{p}_{\text{top},e} - \mathbf{p}_{\text{bot},e}\|_2}{\max(\|\mathbf{p}_{\text{outer},e} - \mathbf{p}_{\text{inner},e}\|_2, 1)}$$</div>
+<p>Un détecteur adaptatif (<code>BlinkDetector</code>) maintient une ligne de base asymétrique $b_t$ (remontée rapide avec gain $0{,}10$, adaptation lente à $0{,}02$ lorsque $o_t > 0{,}8\,b_t$) et invalide la mesure du regard dès que $o_t < 0{,}55\,b_t$, avec une fenêtre de maintien post-réouverture de $\Delta t_{\text{hold}} = 0{,}15\text{ s}$.</p>
+<p>Parallèlement, pour détecter les reflets spéculaires sur verres correcteurs (<code>glare_on_iris</code>), le système mesure la proportion maximale sur les deux disques péri-iriens de rayon $r = \max(3{,}0,\; 0{,}75\,d_{\text{iris}})$ de pixels quasi saturés en luminance ($L \ge 235 / 255$). Les seuils opérationnels distinguent le reflet cornéen physiologique ($< 5\,\%$), le reflet léger ($5\text{--}15\,\%$) et le reflet gênant ($\ge 15\,\%$).</p>
+<h2 id="c3-4">3.2 Normalisation projective de Zhang et al. (2018) et échelle métrique</h2>
+<p>Afin d&#x27;immuniser le réseau d&#x27;apparence aux variations de distance et de roulis de la tête, <code>FaceNormalizer</code> (<code>normalize.py</code>) construit une caméra virtuelle canonique :</p>
+<ol>
+<li><strong>Modèle sténopé approché de la webcam</strong> : à partir du champ de vision horizontal $\theta_{\text{fov}} = 60^\circ$, la matrice intrinsèque $K$ s&#x27;écrit avec $f_x = f_y = \frac{W}{2\tan(\theta_{\text{fov}}/2)}$, $(c_x, c_y) = (W/2, H/2)$.</li>
+<li><strong>Profondeur monoculaire par invariant anatomique</strong> : le diamètre irien humain présentant une très faible variance inter-individuelle ($D_{\text{iris}} \approx 11{,}7\text{ mm}$), la distance instantanée est estimée à partir du diamètre mesuré $d_{\text{iris,px}}$ puis filtrée exponentiellement ($\alpha_z = 0{,}15$) :</li>
+</ol>
+<div class="math-block">$$z_{\text{raw}} = \operatorname{clip}\!\left(\frac{f_x \, D_{\text{iris}}}{d_{\text{iris,px}}}, \; 250\text{ mm}, \; 1500\text{ mm}\right), \qquad \hat{z}_t = \hat{z}_{t-1} + 0{,}15(z_{\text{raw}} - \hat{z}_{t-1})$$</div>
+<ol>
+<li><strong>Origine 3D et base orthonormée virtuelle</strong> : le centre facial $\bar{\mathbf{p}}$ (moyenne des 4 coins oculaires $\{33, 133, 362, 263\}$ et 2 commissures labiales $\{61, 291\}$) est rétro-projeté dans le repère caméra OpenCV ($x$ droite, $y$ bas, $z > 0$ devant la caméra) :</li>
+</ol>
+<div class="math-block">$$\mathbf{o} = \hat{z}_t \, \frac{K^{-1}\tilde{\mathbf{p}}}{\|K^{-1}\tilde{\mathbf{p}}\|_2}, \qquad \mathbf{z}_v = \frac{\mathbf{o}}{\|\mathbf{o}\|_2}$$</div>
+<p>   L&#x27;axe horizontal $\mathbf{x}_{\text{head}}$ est aligné sur les coins externes $\mathbf{p}_{263}, \mathbf{p}_{33}$, puis orthogonalisé :</p>
+<div class="math-block">$$\mathbf{y}_v = \frac{\mathbf{z}_v \times \mathbf{x}_{\text{head}}}{\|\mathbf{z}_v \times \mathbf{x}_{\text{head}}\|_2}, \qquad \mathbf{x}_v = \mathbf{y}_v \times \mathbf{z}_v, \qquad R_{\text{norm}} = \begin{bmatrix} \mathbf{x}_v^\top \\ \mathbf{y}_v^\top \\ \mathbf{z}_v^\top \end{bmatrix} \in SO(3)$$</div>
+<ol>
+<li><strong>Homographie de redressement</strong> : avec distance virtuelle $d_v = 600\text{ mm}$, matrice d&#x27;échelle $S = \operatorname{diag}(1, 1, d_v / \|\mathbf{o}\|_2)$ et matrice intrinsèque virtuelle $C_v$ de focale $f_v = 1900 \cdot (S_{\text{patch}}/448)$, l&#x27;image redressée est obtenue par transformation projective :</li>
+</ol>
+<div class="math-block">$$M_{\text{warp}} = C_v \, S \, R_{\text{norm}} \, K^{-1}$$</div>
+<blockquote>
+<p><strong>Constat empirique d&#x27;échelle focale :</strong> À la focale canonique de Zhang ($f_v = 960\text{ px}$ pour un patch $448$), le visage n&#x27;occupe qu&#x27;environ la moitié du cadre et <code>MobileOne-S0</code> ne suit le regard qu&#x27;à $\sim 30\,\%$ d&#x27;amplitude (<code>normalize.py</code>). L&#x27;élévation à $f_v = 1900\text{ px}$ multiplie le rapport signal/bruit par $\sim 4$ en ajustant le cadrage à la distribution d&#x27;entraînement de Gaze360.</p>
+</blockquote>
+<h2 id="c3-5">3.3 Estimation du regard et intersection rayon–plan écran</h2>
+<h3 id="c3-6">3.3.1 Décodage L2CS et dé-normalisation 3D</h3>
+<p><code>NetGazeEstimator</code> (<code>gaze_model.py</code>) infère sur le patch $448 \times 448$ normalisé ImageNet deux vecteurs de logits $\boldsymbol{\ell}_\psi, \boldsymbol{\ell}_\theta \in \mathbb{R}^{90}$ (classes de largeur $\Delta = 4^\circ$, décalage $-180^\circ$) décodés par espérance softmax :</p>
+<div class="math-block">$$\hat{\alpha} = 4{,}0 \sum_{b=0}^{89} b \, \frac{e^{\ell_b}}{\sum_{j=0}^{89} e^{\ell_j}} - 180^\circ, \qquad \alpha \in \{\psi, \theta\}$$</div>
+<p>Le vecteur unitaire normalisé $\mathbf{g}_{\text{norm}} = (-\cos\theta\sin\psi,\; -\sin\theta,\; -\cos\theta\cos\psi)^\top$ est ensuite replacé dans le repère caméra réel par rotation inverse (Zhang et al., 2018, sans appliquer $S$) :</p>
+<div class="math-block">$$\mathbf{g}_{\text{cam}} = \frac{R_{\text{norm}}^\top \mathbf{g}_{\text{norm}}}{\|R_{\text{norm}}^\top \mathbf{g}_{\text{norm}}\|_2}$$</div>
+<h3 id="c3-7">3.3.2 Projection sur le plan écran et métrique angulaire exacte</h3>
+<p>Le plan écran étant modélisé à $z = 0$ dans le repère caméra (bord supérieur centré horizontalement à $x=0$, décalage vertical webcam $y_{\text{cam}}$), le point d&#x27;impact $(h_x, h_y)$ en millimètres s&#x27;obtient analytiquement par intersection rayon–plan :</p>
+<div class="math-block">$$t = -\frac{o_z}{\min(g_{\text{cam},z}, -0{,}05)}, \qquad \begin{pmatrix} h_x \\ h_y \end{pmatrix} = \begin{pmatrix} o_x + t\,g_{\text{cam},x} \\ o_y + t\,g_{\text{cam},y} \end{pmatrix}$$</div>
+<p>Cette formulation absorbe géométriquement les translations 3D de la tête ($1\text{ cm}$ de décalage facial $\implies 1\text{ cm}$ à l&#x27;écran) sans que la calibration statistique n&#x27;ait à les réapprendre.</p>
+<p>Pour toute cible $\mathbf{p}_{\text{tgt}}$ et prédiction $\mathbf{p}_{\text{pred}}$ converties en coordonnées métriques 3D sur le plan écran, l&#x27;erreur angulaire visuelle exacte $\varepsilon_{\text{vis}}$ est calculée depuis l&#x27;origine oculaire $\mathbf{o}$ (<code>geometry.py:visual_angle_deg</code>) :</p>
+<div class="math-block">$$\varepsilon_{\text{vis}} = \arccos\!\left(\operatorname{clip}\!\left(\frac{(\mathbf{p}_{\text{tgt}} - \mathbf{o}) \cdot (\mathbf{p}_{\text{pred}} - \mathbf{o})}{\|\mathbf{p}_{\text{tgt}} - \mathbf{o}\|_2 \, \|\mathbf{p}_{\text{pred}} - \mathbf{o}\|_2}, \; -1, \; 1\right)\right) \cdot \frac{180}{\pi}$$</div>
+<h2 id="c3-8">3.4 Calibration affine régularisée Ridge et mise à jour séquentielle RLS</h2>
+<p>Sur les vecteurs de caractéristiques brutes $\mathbf{x}_i \in \mathbb{R}^d$ collectés durant les 5 ou 9 points de calibration ($d = 4$ en mode <code>net</code> : $[h_x, h_y, r_x, r_y]$ ; $d = 7$ en mode <code>iris</code> : $[r_x, r_y, r_x^2, r_x r_y, r_y^2, \psi_{\text{tête}}, \theta_{\text{tête}}]$), <code>AffineGazeModel</code> (<code>calibration.py</code>) applique d&#x27;abord une standardisation planchéisée pour éviter l&#x27;explosion de variance des variables peu excitées :</p>
+<div class="math-block">$$z_{i,j} = \frac{x_{i,j} - \mu_j}{\max(\sigma_j, \sigma_{j,\min})}, \qquad \boldsymbol{\phi}_i = \begin{bmatrix} \mathbf{z}_i \\ 1 \end{bmatrix} \in \mathbb{R}^{d+1}$$</div>
+<p>Les poids $W \in \mathbb{R}^{(d+1)\times 2}$ minimisent la perte quadratique avec pénalité Ridge non appliquée au terme de biais :</p>
+<div class="math-block">$$\hat{W} = \left(\Phi^\top \Phi + \alpha N \, \operatorname{diag}(1, \dots, 1, 0)\right)^{-1} \Phi^\top Y$$</div>
+<p>Lors de l&#x27;adaptation implicite sur clics souris, la matrice de covariance inverse initiale est volontairement dilatée d&#x27;un facteur $N / N_{\text{equiv}}$ ($N_{\text{equiv}} = 15$ échantillons équivalents) :</p>
+<div class="math-block">$$P_0 = \frac{N}{N_{\text{equiv}}} \left(\Phi^\top \Phi + \alpha N \, \tilde{I}\right)^{-1}$$</div>
+<p>Chaque clic valide (curseur visible, erreur résiduelle $\|y_{\text{clic}} - \boldsymbol{\phi}_t^\top W\|_2 \le 220\text{ px}$) met à jour $W$ et $P$ via les équations RLS à facteur d&#x27;oubli $\lambda = 0{,}998$ :</p>
+<div class="math-block">$$\begin{aligned}
+\mathbf{k}_t &= \frac{P_{t-1} \boldsymbol{\phi}_t}{\lambda + \boldsymbol{\phi}_t^\top P_{t-1} \boldsymbol{\phi}_t}, \\
+W_t &= W_{t-1} + \mathbf{k}_t \big(y_{\text{clic}}^\top - \boldsymbol{\phi}_t^\top W_{t-1}\big), \qquad
+P_t = \frac{1}{\lambda}\left(P_{t-1} - \mathbf{k}_t \boldsymbol{\phi}_t^\top P_{t-1}\right)
+\end{aligned}$$</div>
+<h2 id="c3-9">3.5 Filtrage temporel médian + One Euro</h2>
+<p>Avant l&#x27;envoi à $120\text{ Hz}$ vers OpenTrack, les séries temporelles de pose et de regard passent par un pré-filtre médian sur fenêtre $w=3$ suivi d&#x27;un filtre One Euro (Casiez et al., 2012) :</p>
+<div class="math-block">$$\begin{aligned}
+\alpha(f_c, \Delta t) &= \left(1 + \frac{1}{2\pi f_c \Delta t}\right)^{-1}, \qquad
+f_c(t) = f_{c,\min} + \beta \, |\hat{\dot{x}}_t|, \\
+\hat{x}_t &= \alpha(f_c, \Delta t)\, x_t + \big(1 - \alpha(f_c, \Delta t)\big)\,\hat{x}_{t-1}
+\end{aligned}$$</div>
+<p>où $\hat{\dot{x}}_t$ est la dérivée discrète lissée à coupure fixe $f_{d} = 1{,}0\text{ Hz}$. L&#x27;impact quantitatif de ce couplage médian + One Euro sur des captures réelles est mesuré au Chapitre 6.</p></section><section class="chapter"><h1 id="c4-0">Chapitre 4 — Méthodologie d&#x27;Acquisition Solo et Protocoles Expérimentaux</h1>
+<p>Un des verrous centraux d&#x27;un projet individuel d&#x27;eye tracking réside dans l&#x27;acquisition des données : comment constituer un corpus massif ($10^3$ à $10^4$ images annotées au dixième de degré près), diversifié en poses de tête et en conditions photométriques, sans matériel Tobii et avec <strong>un seul participant</strong> ? Ce chapitre formalise les protocoles implémentés dans <code>research/eye_crop.py</code>, <code>research/collect_pursuit.py</code>, <code>research/collect_clicks.py</code> et <code>research/lag_estimation.py</code>.</p>
+<h2 id="c4-1">4.1 Extraction canonique des patchs binoculaires ($96 \times 48$)</h2>
+<p>L&#x27;analyse de la note méthodologique et de l&#x27;état de l&#x27;art montre qu&#x27;un réseau plein-visage ($448 \times 448$) souffre de deux défauts majeurs en contexte mono-sujet :</p>
+<ol>
+<li><strong>Surcharge de calcul CPU</strong> ($11{,}16\text{ ms}$ par frame pour <code>MobileOne-S0</code>) ;</li>
+<li><strong>Risque de sur-apprentissage du contexte</strong> (arrière-plan de la pièce, vêtements, coiffure), créant une illusion de précision intra-session qui s&#x27;effondre dès le moindre changement d&#x27;éclairage ou de posture.</li>
+</ol>
+<p>Dans <code>research/eye_crop.py</code>, chaque œil est extrait indépendamment par transformation affine alignée sur ses commissures $(\mathbf{p}_{\text{gauche}}, \mathbf{p}_{\text{droite}})$ (indices MediaPipe $\{33, 133\}$ pour l&#x27;œil droit du sujet et $\{362, 263\}$ pour l&#x27;œil gauche) :</p>
+<div class="math-block">$$\mathbf{v}_e = \mathbf{p}_{\text{droite},e} - \mathbf{p}_{\text{gauche},e}, \qquad w_e = \|\mathbf{v}_e\|_2, \qquad \phi_e = \operatorname{atan2}(v_{e,y}, v_{e,x})$$</div>
+<p>Le centre du patch $\mathbf{c}_e$ combine équitablement le milieu inter-commissural et le milieu vertical palpébral $(\mathbf{p}_{\text{top},e} + \mathbf{p}_{\text{bot},e})/2$, et le facteur d&#x27;échelle $s_e = W_{\text{crop}} / (1{,}6 \, w_e)$ garantit une largeur fixe $W_{\text{crop}} = 96\text{ px}$ ($H_{\text{crop}} = 48\text{ px}$), incluant systématiquement les paupières supérieure et inférieure tout en éliminant le roulis crânien et l&#x27;arrière-plan.</p>
+<p>L&#x27;entrée du réseau est complétée par un vecteur géométrique normalisé $\mathbf{g}_{\text{pose}} \in \mathbb{R}^9$ :</p>
+<div class="math-block">$$\mathbf{g}_{\text{pose}} = \left[\frac{x}{100}, \frac{y}{100}, \frac{z}{100}, \psi_{\text{rad}}, \theta_{\text{rad}}, \phi_{\text{rad}}, \frac{\bar{u}_{\text{yeux}}}{W} - 0{,}5, \frac{\bar{v}_{\text{yeux}}}{H} - 0{,}5, \frac{d_{\text{iris}}}{W}\right]^\top$$</div>
+<p>Ce découplage réduit la charge mémoire à $2 \times 48 \times 96 \times 3 = 27{,}6\text{ Ko}$ bruts ($\sim 10\text{ Ko}$ compressés par frame) et le temps d&#x27;extraction sur CPU à $0{,}12\text{ ms}$.</p>
+<h2 id="c4-2">4.2 Protocole 1 : Poursuite oculaire lisse (<em>Smooth Pursuit</em>) et estimation du lag $\tau$</h2>
+<h3 id="c4-3">4.2.1 Justification physiologique et trajectoire de Lissajous saturée</h3>
+<p>Les calibrations classiques par points fixes (5 à 9 cibles) imposent une contrainte cognitive forte tout en ne couvrant qu&#x27;une poignée de directions du regard. En revanche, lorsque le sujet suit visuellement une cible continue se déplaçant à vitesse modérée ($< 15^\circ/\text{s}$), le système oculomoteur humain engage la <strong>poursuite lisse</strong> (<em>smooth pursuit</em>) avec un gain proche de l&#x27;unité ($\approx 0{,}95$) et une erreur de suivi intrinsèque inférieure à $0{,}5^\circ$, tout en autorisant des mouvements lents de tête (réflexe vestibulo-oculaire compensé naturellement par le sujet).</p>
+<p>Dans <code>research/lag_estimation.py</code>, la trajectoire écran $(x(t), y(t))$ est engendrée par deux paires d&#x27;harmoniques incommensurables ($f_{x1}=0{,}11\text{ Hz}$, $f_{x2}=0{,}047\text{ Hz}$, $f_{y1}=0{,}13\text{ Hz}$, $f_{y2}=0{,}061\text{ Hz}$) passées dans une compression douce $\tanh(1{,}25\,s)/\tanh(1{,}25)$. Ce profil maintient une continuité $C^\infty$, passe fréquemment dans les bords et coins (à $6\,\%$ des marges écran), et borne la vitesse angulaire maximale sous les limites de saccades de rattrapage (vérifiée analytiquement à $\le 25^\circ/\text{s}$ en pic et modérée en moyenne). À $30\text{ fps}$, une session de $60\text{ s}$ produit $1\,800$ échantillons étiquetés.</p>
+<h3 id="c4-4">4.2.2 Modélisation et identification du retard visuo-moteur $\tau_{\text{lag}}$</h3>
+<p>En poursuite lisse, l&#x27;œil accuse un retard de traitement visuo-moteur et d&#x27;acquisition caméra quasi constant $\tau_{\text{lag}} \approx 50\text{--}120\text{ ms}$. Étiqueter l&#x27;image $I(t)$ par la cible synchrone $\mathbf{y}(t)$ introduit une erreur systématique proportionnelle à la vitesse de la cible :</p>
+<div class="math-block">$$\varepsilon_{\text{lag}} \approx \|\dot{\mathbf{y}}(t)\| \cdot \tau_{\text{lag}}$$</div>
+<p>À $12^\circ/\text{s}$ et $\tau = 80\text{ ms}$, ce biais atteint déjà $\sim 1{,}0^\circ$ — suffisant à lui seul pour empêcher de descendre sous $1{,}5^\circ$ !</p>
+<p>Pour identifier $\hat{\tau}_{\text{lag}}$ empiriquement sans fuite sur la cible, <code>estimate_visuomotor_lag</code> balaie $\tau \in [-40, +220]\text{ ms}$ par pas de $5\text{ ms}$, interpole les cibles décalées $\mathbf{y}(t - \tau)$ sur un cœur temporel commun et évalue la RMSE d&#x27;une régression Ridge en validation croisée temporelle en deux blocs disjoints (première moitié / seconde moitié de la session) :</p>
+<div class="math-block">$$\hat{\tau}_{\text{lag}} = \arg\min_{\tau} \; \text{RMSE}_{\text{CV2}}\!\big(X(t), \; \mathbf{y}(t - \tau)\big)$$</div>
+<h2 id="c4-5">4.3 Protocole 2 : Récolte passive pré-saccadique sur clics souris</h2>
+<p>Pour accumuler des données en conditions écologiques réelles (bureautique, navigation, variations naturelles de posture et de luminosité), <code>research/collect_clicks.py</code> implémente un collecteur passif silencieux doté d&#x27;un <strong>tampon circulaire</strong> (<em>ring buffer</em>) de $90$ trames ($\sim 1{,}5\text{--}3\text{ s}$).</p>
+<p>L&#x27;innovation méthodologique par rapport à l&#x27;échantillonnage synchrone au clic (<code>main.py</code>) tient à la chronométrie oculo-motrice : au moment exact $t_{\text{clic}}$ où le doigt enfonce le bouton gauche de la souris, l&#x27;œil a fréquemment déjà amorcé une saccade vers la zone d&#x27;action suivante ou cligné. Le collecteur inspecte donc le tampon circulaire autour de l&#x27;instant pré-saccadique optimal $t_{\text{clic}} - \tau_{\text{pre}}$ (défaut $\tau_{\text{pre}} = 75\text{ ms}$, fenêtre d&#x27;acceptation $\pm 60\text{ ms}$) et ne valide l&#x27;échantillon que sous quatre conditions cumulatives :</p>
+<ol>
+<li>Le curseur Windows est explicitement visible (<code>CURSOR_SHOWING</code>, excluant les jeux FPS/simulation où la souris est capturée) ;</li>
+<li>Le visage est détecté et les deux patchs oculaires ont une largeur $\ge 6\text{ px}$ ;</li>
+<li>Aucun clignement ni phase post-réouverture ($0{,}15\text{ s}$) n&#x27;est actif ;</li>
+<li>Le taux de reflet irien reste inférieur au seuil <code>GLARE_STRONG</code> ($0{,}15$).</li>
+</ol>
+<h2 id="c4-6">4.4 Règle stricte de partitionnement inter-sessions (anti-fuite temporelle)</h2>
+<p>Une erreur méthodologique fréquente dans la littérature amateure consiste à diviser aléatoirement les trames d&#x27;une même vidéo (<em>random frame split</em>) entre entraînement et test. À $30\text{ fps}$, deux images distantes de $33\text{ ms}$ sont quasi identiques : l&#x27;erreur de test mesure alors la mémorisation locale, pas la généralisation.</p>
+<p>Dans l&#x27;ensemble de ce travail (<code>research/train.py</code> et <code>research/run_synthetic_ablations.py</code>), nous imposons une <strong>séparation stricte par sessions indépendantes</strong> :</p>
+<ul>
+<li>Les sessions d&#x27;entraînement, de validation et de test sont capturées lors d&#x27;exécutions distinctes (ou, à défaut sur une session unique, découpées en blocs temporels contigus 80/20 sans chevauchement).</li>
+<li>L&#x27;évaluation du <strong>Scénario A</strong> teste la robustesse inter-sessions sur un même sujet (changement d&#x27;éclairage, de distance, de posture).</li>
+<li>L&#x27;évaluation du <strong>Scénario B</strong> entraîne exclusivement sur un sujet $S_0$ et évalue la performance sur des sujets inédits $S_1, \dots, S_5$ jamais vus à l&#x27;entraînement.</li>
+</ul></section><section class="chapter"><h1 id="c5-0">Chapitre 5 — Architectures Proposées : Du Modèle Personnel Sous-1,5° au Réseau Différentiel Transférable</h1>
+<p>Ce chapitre détaille les deux architectures légères développées dans <code>research/models.py</code> et <code>research/augmentations.py</code> pour répondre respectivement au <strong>Scénario A</strong> (précision maximale sur un utilisateur unique) et au <strong>Scénario B</strong> (modèle entraîné sur un seul sujet mais transférable à de nouveaux utilisateurs sans dépendance à des poids non commerciaux).</p>
+<h2 id="c5-1">5.1 Principes de conception communs</h2>
+<p>Les architectures CNN généralistes comme <code>MobileOne-S0</code> plein-visage ($448 \times 448$) ou <code>ResNet-50</code> répondent mal aux contraintes d&#x27;un tracker temps réel sur CPU bureautique :</p>
+<ol>
+<li>Leur coût d&#x27;inférence ($11{,}16\text{ ms}$ pour <code>MobileOne-S0</code> sur le poste de référence) laisse peu de marge sous le seuil des $60\text{ Hz}$ ($16{,}67\text{ ms}$) une fois additionnés la capture, MediaPipe et le rendu du jeu ;</li>
+<li>Le <em>Global Average Pooling</em> (GAP) terminal, classique en classification d&#x27;images, détruit l&#x27;invariance/équivariance spatiale fine : savoir <em>où</em> se situe précisément le limbe irien par rapport aux commissures oculaires devient plus difficile ;</li>
+<li>L&#x27;entrée plein-visage facilite le sur-apprentissage du fond ou de la coiffure lorsque le jeu d&#x27;entraînement provient d&#x27;un seul individu.</li>
+</ol>
+<p>Nous introduisons donc un encodeur léger <code>SpatialEyeEncoder</code> partageant trois choix structurels :</p>
+<h3 id="c5-2">5.1.1 Encodage explicite des coordonnées (<code>CoordConv2d</code>)</h3>
+<p>Dès la première couche (<code>research/models.py:CoordConv2d</code>), deux canaux de grille statiques normalisés $(x, y) \in [-1, 1]^2$ sont concaténés à l&#x27;image oculaire $48 \times 96$. Conformément à Liu et al. (NeurIPS 2018), cet apport rompt la symétrie de translation des convolutions standard et permet aux filtres précoces d&#x27;associer directement la frontière sclère–iris à sa coordonnée horizontale et verticale relative aux coins de l&#x27;œil.</p>
+<h3 id="c5-3">5.1.2 Blocs séparables en profondeur et préservation topologique $3 \times 3$</h3>
+<p>Après un <em>stem</em> <code>CoordConv2d</code> de pas 2 ($24 \times 48$), trois étages de convolutions séparables en profondeur (<code>DSConvBlock</code>, convolution <em>depthwise</em> $3 \times 3$ + <em>BatchNorm</em> + <em>SiLU</em> + <em>pointwise</em> $1 \times 1$ avec connexion résiduelle à résolution constante) réduisent la carte d&#x27;activation à $3 \times 6$. Plutôt qu&#x27;un GAP global ($1 \times 1$), un sous-échantillonnage <code>AvgPool2d(1, 2)</code> produit une <strong>grille spatiale $3 \times 3$</strong> ($9$ régions locales correspondant aux secteurs haut/milieu/bas $\times$ gauche/centre/droite de l&#x27;œil) avant la projection linéaire vers un vecteur latent $z \in \mathbb{R}^{64}$. Le choix exact de <code>AvgPool2d(1, 2)</code> sur $3 \times 6$ garantit également une exportation ONNX statique sans opérateur adaptatif dynamique.</p>
+<h2 id="c5-4">5.2 Scénario A : <code>DualEyePersonalNet</code> (Hyper-personnalisation)</h2>
+<h3 id="c5-5">5.2.1 Formulation et couplage géométrique</h3>
+<p><code>DualEyePersonalNet</code> (<code>70\,482</code> paramètres entraînables) exploite un encodeur <code>SpatialEyeEncoder</code> siamois à 3 canaux RGB sur les deux patchs oculaires alignés $(I_L, I_R) \in \mathbb{R}^{2 \times 3 \times 48 \times 96}$ :</p>
+<div class="math-block">$$\mathbf{z}_L = E_\theta(I_L), \qquad \mathbf{z}_R = E_\theta(I_R) \in \mathbb{R}^{64}$$</div>
+<p>Parallèlement, le vecteur géométrique 6DoF $\mathbf{g}_{\text{pose}} \in \mathbb{R}^9$ est projeté via un perceptron multicouche <code>LayerNorm + SiLU</code> vers $\mathbf{z}_p \in \mathbb{R}^{32}$. La tête de fusion <code>MLP(160 -&gt; 96 -&gt; 48 -&gt; 2)</code> prédit directement les angles $(\hat{\psi}, \hat{\theta})$ de la direction de regard 3D dans le repère caméra depuis l&#x27;origine oculaire $\mathbf{o}_{3\text{D}}$ :</p>
+<div class="math-block">$$(\hat{\psi}, \hat{\theta}) = H_\phi\big([\mathbf{z}_L \,;\, \mathbf{z}_R \,;\, \mathbf{z}_p]\big)$$</div>
+<p>L&#x27;intersection rayon–plan écran (<code>gaze_angles_deg_to_screen_px</code>) restitue ensuite la position pixel exacte quelle que soit la distance ultérieure à l&#x27;écran.</p>
+<h3 id="c5-6">5.2.2 Fonction de perte et export temps réel</h3>
+<p>L&#x27;entraînement minimise la perte de Huber lisse (<code>SmoothL1Loss</code>, $\beta = 1{,}0^\circ$) avec optimiseur AdamW ($\text{lr} = 2{,}5 \times 10^{-3}$, décroissance cosinus). Cette perte concilie sensibilité quadratique près de zéro ($< 1^\circ$) et robustesse linéaire face aux rares distractions oculaires résiduelles des sessions écologiques. Exporté en ONNX (<code>opset 17</code>), le modèle atteint <strong>$0{,}25\text{ ms}$ par frame</strong> sur CPU ($45\times$ plus rapide que <code>MobileOne-S0</code>).</p>
+<h2 id="c5-7">5.3 Scénario B : <code>DifferentialEyeNet</code> et randomisation morphologique</h2>
+<p>Lorsqu&#x27;un modèle direct est entraîné sur un unique sujet $S_0$, deux facteurs provoquent son effondrement sur un utilisateur inconnu $S_k$ :</p>
+<ol>
+<li><strong>L&#x27;angle kappa inconnu</strong> ($\kappa_k \neq \kappa_0$, écart pouvant atteindre $\pm 5^\circ$–$8^\circ$) ;</li>
+<li><strong>La signature anatomique et photométrique</strong> (teinte de peau, largeur d&#x27;ouverture palpébrale, couleur d&#x27;iris, présence ou non de lunettes).</li>
+</ol>
+<h3 id="c5-8">5.3.1 Architecture siamoise différentielle antisymétrique</h3>
+<p>Inspirée de Liu et al. (BMVC 2018), <code>DifferentialEyeNet</code> (<code>66\,834</code> paramètres) opère sur des <strong>paires requête–ancre</strong> $(q, r)$ dont les patchs ont préalablement été convertis en luminance et normalisés à moyenne nulle et variance unitaire <em>par patch</em> (<code>preprocess_eye_batch_gray_norm</code>) :</p>
+<div class="math-block">$$\tilde{I}_e = \frac{Y(I_e) - \mu(Y(I_e))}{\max(\sigma(Y(I_e)), 10^{-4})}$$</div>
+<p>Cette normalisation locale élimine dès l&#x27;entrée les écarts de carnation cutanée et de niveau d&#x27;éclairage global. L&#x27;encodeur partagé extrait $(z_{L,q}, z_{R,q})$ et $(z_{L,r}, z_{R,r})$, puis la tête différentielle <code>diff_head</code> reçoit uniquement les différences latentes et géométriques (assorties du contexte moyen de pose pour le couplage 3D) :</p>
+<div class="math-block">$$g_\omega(q, r) = \text{MLP}\big([z_{L,q}-z_{L,r} \,;\, z_{R,q}-z_{R,r} \,;\, \mathbf{g}_q - \mathbf{g}_r \,;\, \tfrac{1}{2}(\boldsymbol{\theta}_{\text{tête},q} + \boldsymbol{\theta}_{\text{tête},r})]\big)$$</div>
+<p>Pour imposer mathématiquement la cohérence physique d&#x27;un opérateur différentiel, la sortie finale est <strong>antisymétrisée par construction</strong> :</p>
+<div class="math-block">$$\widehat{\Delta}(q, r) = \frac{1}{2}\Big(g_\omega(q, r) - g_\omega(r, q)\Big)$$</div>
+<p>Cette propriété garantit sans perte auxiliaire que $\widehat{\Delta}(r, r) \equiv (0, 0)$ (erreur nulle sur les ancres exactes) et $\widehat{\Delta}(q, r) = -\widehat{\Delta}(r, q)$.</p>
+<h3 id="c5-9">5.3.2 Agrégation multi-ancres $K \in \{1, 5\}$ à coût amorti</h3>
+<p>À l&#x27;utilisation sur un nouvel utilisateur $S_k$, il suffit de capturer $K$ images ancres de calibration $\{r_1, \dots, r_K\}$ (par ex. $K=1$ point central ou la croix 5 points d&#x27;Eyeware Beam). Leurs embeddings $(z_{L,r_j}, z_{R,r_j})$ sont <strong>pré-calculés une seule fois</strong> à la fin de la calibration ; chaque frame temps réel ne nécessite donc qu&#x27;une unique passe encodeur pour $q$ suivie de $K$ évaluations du petit MLP (<code>1,94 ms</code> mesurés pour $K=5$ en PyTorch) :</p>
+<div class="math-block">$$\hat{\mathbf{g}}(q) = \frac{1}{K} \sum_{j=1}^{K} \Big(\mathbf{g}(r_j) + \widehat{\Delta}(q, r_j)\Big)$$</div>
+<p>Par construction, la différence $\mathbf{g}(q) - \mathbf{g}(r_j)$ annule exactement l&#x27;angle $\kappa_k$ constant du sujet cible !</p>
+<h3 id="c5-10">5.3.3 Randomisation morphologique et photométrique mono-sujet</h3>
+<p>Sans augmentation adaptée, un encodeur entraîné sur le seul visage $S_0$ risque néanmoins de spécialiser ses filtres sur l&#x27;ouverture palpébrale ou le contraste exact de $S_0$. Dans <code>research/augmentations.py</code>, chaque élément des paires $(q, r)$ subit indépendamment durant l&#x27;entraînement :</p>
+<ul>
+<li>Un étirement morphologique anisotrope autour du centre oculaire ($s_x \in [0{,}86, 1{,}14]$, $s_y \in [0{,}75, 1{,}28]$, rotation $\pm 4^\circ$, léger décalage $\pm 1{,}5\text{ px}$), simulant des formes d&#x27;yeux et d&#x27;ouvertures palpébrales variées ;</li>
+<li>Une perturbation photométrique complète (gamma $\in [0{,}65, 1{,}45]$, gain/biais d&#x27;exposition, flou gaussien simulant la défocalisation webcam, bruit capteur) ;</li>
+<li>L&#x27;injection probabiliste ($p = 0{,}20$) de reflets spéculaires elliptiques doux simulant des verres de lunettes.</li>
+</ul>
+<p>L&#x27;ablation comparant <code>DifferentialEyeNet</code> <em>avec</em> et <em>sans</em> cette randomisation morphologique sur des sujets inédits $S_1 \dots S_5$ est quantifiée au Chapitre 6.</p></section><section class="chapter"><h1 id="c6-0">Chapitre 6 — Résultats Expérimentaux, Ablations et Analyse Statistique</h1>
+<p>Ce chapitre présente deux niveaux complémentaires de validation empirique :</p>
+<ol>
+<li><strong>L&#x27;audit quantitatif sur données humaines réelles existantes et le profilage CPU sur le poste cible</strong> (Sections 6.1 à 6.3) ;</li>
+<li><strong>Les ablations contrôlées des architectures proposées (<code>DualEyePersonalNet</code> et <code>DifferentialEyeNet</code>) sur banc paramétrique multi-sujets</strong>, ainsi que le protocole prêt à exécuter pour la campagne webcam humaine multi-sessions (Sections 6.4 à 6.6).</li>
+</ol>
+<p>---</p>
+<h2 id="c6-1">6.1 Audit de la baseline réelle ($N = 405$, lunettes, écran $27''$ QHD)</h2>
+<p>Les mesures proviennent de l&#x27;enregistrement réel <code>data/calibration_samples_net.npz</code> capturé dans le projet <code>Eyetrack</code> : 9 cibles réparties à $10\,\%$, $50\,\%$ et $90\,\%$ sur un moniteur $2560 \times 1440$ pixels ($27''$) à $60\text{ cm}$ de distance, sur une durée de $41{,}76\text{ s}$ ($45$ échantillons par cible, $N = 405$ au total), port de lunettes correctrices, diamètre irien médian mesuré à $20{,}5\text{ px}$, sans reflet saturant sur l&#x27;iris (<code>glare = 0</code>).</p>
+<h3 id="c6-2">6.1.1 Comparaison des représentations en validation croisée <em>Leave-One-Target-Out</em> (LOO-CV)</h3>
+<p>Chaque modèle linéaire régularisé Ridge est appris sur $8$ cibles puis évalué sur la $9^\text{e}$ cible jamais vue, avec calcul de l&#x27;erreur angulaire visuelle exacte $\varepsilon_{\text{vis}}$ depuis l&#x27;origine 3D estimée de l&#x27;œil :</p>
+<table>
+<thead><tr><th>Modèle (features Ridge)</th><th>Fixation 0,5 s (°)</th><th>Par frame (°)</th><th>Médiane frame (°)</th><th>P95 frame (°)</th><th>Yaw MAE (°)</th><th>Pitch MAE (°)</th><th>Centre (°)</th><th>Bords (°)</th><th>Coins (°)</th></tr></thead><tbody>
+<tr><td><strong><code>impact (MobileOne)</code></strong> ($\alpha=10^{-2}$)</td><td><strong>3,18</strong></td><td><strong>4,40</strong></td><td><strong>3,78</strong></td><td>10,80</td><td>3,71</td><td>2,23</td><td>1,95</td><td><strong>1,86</strong></td><td><strong>4,06</strong></td></tr>
+<tr><td><code>impact quadratique</code></td><td>3,82</td><td>4,87</td><td>4,13</td><td>11,46</td><td>4,31</td><td><strong>2,14</strong></td><td>3,29</td><td>1,52</td><td>5,60</td></tr>
+<tr><td><code>impact + iris</code></td><td>3,87</td><td>4,28</td><td>4,41</td><td><strong>7,28</strong></td><td>3,31</td><td>2,66</td><td><strong>1,35</strong></td><td>3,69</td><td>4,59</td></tr>
+<tr><td><code>impact + tête</code></td><td>5,25</td><td>6,20</td><td>5,06</td><td>14,01</td><td>4,26</td><td>4,08</td><td>1,63</td><td>5,15</td><td>6,01</td></tr>
+<tr><td><code>impact + tête + iris</code></td><td>5,89</td><td>6,16</td><td>5,45</td><td>12,44</td><td>4,13</td><td>4,28</td><td>1,90</td><td>4,94</td><td>7,67</td></tr>
+<tr><td><code>réseau + tête</code></td><td>5,90</td><td>6,66</td><td>5,48</td><td>15,71</td><td>4,78</td><td>4,06</td><td>3,95</td><td>5,43</td><td>6,61</td></tr>
+<tr><td><code>iris + tête (MVP)</code> ($\alpha=10^{-3}$)</td><td>9,06</td><td>9,12</td><td>8,76</td><td>20,72</td><td>4,70</td><td>7,64</td><td>1,82</td><td>9,34</td><td>10,57</td></tr>
+<tr><td><code>iris seul (sans tête)</code> ($\alpha=10^{-3}$)</td><td>9,41</td><td>9,51</td><td>10,06</td><td>20,68</td><td><strong>2,68</strong></td><td>9,21</td><td>4,85</td><td>10,99</td><td>8,91</td></tr>
+</tbody>
+</table>
+<p><figure><img src="figures/fig1_real_calibration_models.png" alt="Comparaison LOO-CV et asymétrie yaw/pitch sur données réelles"><figcaption>Comparaison LOO-CV et asymétrie yaw/pitch sur données réelles</figcaption></figure></p>
+<p>Quatre enseignements scientifiques majeurs ressortent de ce tableau :</p>
+<ol>
+<li><strong>Supériorité nette de l&#x27;apparence hybride + géométrie sur l&#x27;iris pur</strong> : l&#x27;intersection rayon–plan du modèle <code>MobileOne-S0</code> (<code>impact</code>) divise l&#x27;erreur de fixation par près de $3\times$ par rapport à la baseline MVP <code>iris + tête</code> ($3{,}18^\circ$ contre $9{,}06^\circ$).</li>
+<li><strong>Complémentarité au centre et réduction des pics extrêmes avec l&#x27;iris</strong> : <code>impact + iris</code> obtient la plus faible erreur au centre ($1{,}35^\circ$) et abaisse le $95^\text{e}$ percentile de $10{,}80^\circ$ à $7{,}28^\circ$, bien que sa moyenne globale ($3{,}87^\circ$) reste pénalisée aux bords par le mélange entre pose de tête et ratios iriens.</li>
+<li><strong>Effondrement du ratio d&#x27;iris vertical sous occlusion palpébrale</strong> : sur <code>iris seul</code>, l&#x27;erreur verticale atteint $9{,}21^\circ$ contre $2{,}68^\circ$ à l&#x27;horizontale ($3{,}4\times$ plus élevée). L&#x27;inspection par cible confirme que l&#x27;ouverture oculaire moyenne passe de $0{,}366$ et $0{,}342$ sur la rangée supérieure ($y=144\text{ px}$) à $0{,}222$ et $0{,}200$ sur la rangée inférieure ($y=1296\text{ px}$), soit une baisse de $\sim 42\,\%$ qui écrase la dynamique verticale du ratio irien.</li>
+<li><strong>Piège statistique de la pose de tête en calibration discrète</strong> : l&#x27;ajout des angles de pose crânienne dégrade <code>impact</code> de $3{,}18^\circ$ à $5{,}25^\circ$. L&#x27;inspection des statistiques par cible révèle l&#x27;origine exacte de ce phénomène :</li>
+</ol>
+<table>
+<thead><tr><th>Cible $(x, y)$</th><th>$N$</th><th>Yaw tête moyen $\pm \sigma$ (°)</th><th>Pitch tête moyen $\pm \sigma$ (°)</th><th>Ouverture œil</th><th>Erreur <code>impact</code> (°)</th><th>Erreur <code>impact+tête</code> (°)</th></tr></thead><tbody>
+<tr><td>$T_1\;(256, 144)$</td><td>45</td><td>$-0{,}36 \pm 0{,}17$</td><td>$8{,}84 \pm 0{,}22$</td><td>0,366</td><td>2,65</td><td>3,81</td></tr>
+<tr><td>$T_3\;(256, 1296)$</td><td>45</td><td>$+6{,}62 \pm 0{,}11$</td><td>$13{,}88 \pm 0{,}18$</td><td>0,295</td><td>7,40</td><td>8,64</td></tr>
+<tr><td>$T_4\;(1280, 144)$</td><td>45</td><td>$+1{,}69 \pm 0{,}27$</td><td>$\mathbf{+0{,}39 \pm 1{,}30}$</td><td>0,307</td><td><strong>2,01</strong></td><td><strong>12,35</strong></td></tr>
+<tr><td>$T_5\;(1280, 720)$</td><td>45</td><td>$-1{,}10 \pm 0{,}10$</td><td>$8{,}77 \pm 0{,}15$</td><td>0,277</td><td>1,95</td><td>1,63</td></tr>
+<tr><td>$T_9\;(2304, 1296)$</td><td>45</td><td>$+0{,}69 \pm 0{,}08$</td><td>$11{,}64 \pm 0{,}11$</td><td>0,200</td><td>5,66</td><td>4,78</td></tr>
+</tbody>
+</table>
+<p>Pendant la calibration, la tête est restée quasi figée à l&#x27;intérieur de chaque cible ($\sigma_{\text{yaw}} \le 0{,}27^\circ$), mais a pivoté <em>entre</em> cibles : ainsi $T_4$ présente un pitch moyen de $+0{,}39^\circ$ alors que les huit autres cibles se situent entre $8{,}77^\circ$ et $13{,}88^\circ$. Retirer $T_4$ en LOO-CV force le régresseur à extrapoler en pose hors enveloppe, faisant bondir son erreur de $2{,}01^\circ$ à $12{,}35^\circ$. Ceci confirme expérimentalement notre <strong>hypothèse $H_1$</strong> : seule une acquisition continue (<em>Smooth Pursuit</em>) balayant indépendamment la pose de tête sur tout l&#x27;écran permet de décorréler tête et regard.</p>
+<p>---</p>
+<h2 id="c6-3">6.2 Sensibilité à la régularisation, carte spatiale et filtrage temporel</h2>
+<p><figure><img src="figures/fig2_real_alpha_and_spatial.png" alt="Balayage Ridge alpha et carte spatiale LOO-CV"><figcaption>Balayage Ridge alpha et carte spatiale LOO-CV</figcaption></figure></p>
+<p>Le balayage logarithmique $\alpha \in [10^{-4}, 1{,}0]$ montre un plateau stable entre $10^{-4}$ et $10^{-2}$ pour <code>impact</code> ($3{,}13^\circ \to 3{,}18^\circ$) suivi d&#x27;un biais de sous-ajustement rapide au-delà de $\alpha = 0{,}05$. La carte spatiale $3 \times 3$ confirme la forte anisotropie périphérique déjà documentée dans la littérature : $1{,}86^\circ\text{--}1{,}95^\circ$ au centre et sur les bords médians, contre $5{,}66^\circ$ et $7{,}40^\circ$ aux coins droits ($90\,\%$).</p>
+<p>L&#x27;évaluation du filtrage temporel sur les séquences prédites LOO-CV de <code>impact (MobileOne)</code> quantifie l&#x27;apport du pré-filtre médian devant le filtre One Euro :</p>
+<table>
+<thead><tr><th>Configuration de filtrage</th><th>Erreur moyenne (°)</th><th>Jitter intra-cible moyen (°)</th><th>Réduction du jitter</th></tr></thead><tbody>
+<tr><td>Signal brut (image par image)</td><td>4,40</td><td>3,21</td><td>Référence</td></tr>
+<tr><td><code>OneEuro</code> seul ($f_{c,\min}=1{,}0\text{ Hz},\;\beta=0{,}007$)</td><td>4,03</td><td>2,75</td><td>$-14{,}3\,\%$</td></tr>
+<tr><td>Pré-filtre médian ($w = 3$) seul</td><td>3,78</td><td>2,27</td><td>$-29{,}3\,\%$</td></tr>
+<tr><td><strong>Médian ($w = 3$) + <code>OneEuro</code></strong></td><td><strong>3,64</strong></td><td><strong>2,08</strong></td><td><strong>$-35{,}2\,\%$</strong></td></tr>
+</tbody>
+</table>
+<p>Le pré-filtrage médian élimine les valeurs aberrantes isolées du CNN qui, autrement, gonflent artificiellement la dérivée $|\hat{\dot{x}}_t|$ et ouvrent intempestivement la bande passante du filtre One Euro.</p>
+<p>---</p>
+<h2 id="c6-4">6.3 Profilage temps réel CPU et gain architectural ($45\times$)</h2>
+<p>L&#x27;ensemble des briques a été profilé sur le CPU local ($120$ itérations après $15$ passes d&#x27;échauffement) :</p>
+<table>
+<thead><tr><th>Étape / Modèle</th><th>Paramètres</th><th>Latence moyenne (ms)</th><th>Écart-type (ms)</th><th>$p_{95}$ (ms)</th><th>Part du budget 60 Hz</th></tr></thead><tbody>
+<tr><td><code>MediaPipe FaceLandmarker</code> (1280×720, pass sans visage suivi)</td><td>—</td><td>2,21</td><td>0,12</td><td>2,37</td><td>13,3 %</td></tr>
+<tr><td>Normalisation Zhang 2018 ($448 \times 448$)</td><td>—</td><td>0,65</td><td>0,08</td><td>0,79</td><td>3,9 %</td></tr>
+<tr><td><strong><code>MobileOne-S0</code> (ONNX, $448 \times 448$)</strong></td><td>~4,8 Mo</td><td><strong>11,16</strong></td><td>1,65</td><td>12,81</td><td><strong>66,9 %</strong></td></tr>
+<tr><td>Extraction binoculaire <code>eye_crop</code> ($2 \times 48 \times 96$) + reflets</td><td>—</td><td><strong>0,12</strong></td><td>0,01</td><td>0,13</td><td>0,7 %</td></tr>
+<tr><td><strong><code>DualEyePersonalNet</code> (ONNX, $2 \times 48 \times 96$)</strong></td><td><strong>70 482</strong></td><td><strong>0,25</strong></td><td>0,03</td><td>0,31</td><td><strong>1,5 %</strong></td></tr>
+<tr><td><code>DualEyePersonalNet</code> (PyTorch eager)</td><td>70 482</td><td>1,91</td><td>0,18</td><td>2,12</td><td>11,4 %</td></tr>
+<tr><td><code>DifferentialEyeNet</code> ($K = 5$ ancres en cache, PyTorch)</td><td>66 834</td><td>1,94</td><td>0,20</td><td>2,28</td><td>11,6 %</td></tr>
+<tr><td>Ratios d&#x27;iris géométriques</td><td>—</td><td>0,01</td><td>0,003</td><td>0,015</td><td>&lt; 0,1 %</td></tr>
+</tbody>
+</table>
+<p><figure><img src="figures/fig3_cpu_latency_budget.png" alt="Budget de latence CPU mesuré sur le poste cible"><figcaption>Budget de latence CPU mesuré sur le poste cible</figcaption></figure></p>
+<p>Le remplacement du couple <em>(Zhang $448^2$ + <code>MobileOne-S0</code>)</em> ($11{,}81\text{ ms}$) par <em>(Extraction <code>eye_crop</code> $96 \times 48$ + <code>DualEyePersonalNet</code> ONNX)</em> ($0{,}37\text{ ms}$) procure un <strong>facteur d&#x27;accélération de $31{,}9\times$ sur l&#x27;ensemble prétraitement + inférence</strong> (et <strong>$44{,}8\times$</strong> sur le réseau seul), ramenant la consommation neuronale sous $1{,}5\,\%$ du budget $60\text{ Hz}$. <em>(Note méthodologique : la mesure <code>MediaPipe</code> ci-dessus reflète le temps de passage sur trame synthétique uniforme ; en flux réel avec détection faciale active et maillage 478 points, cette étape occupe typiquement quelques millisecondes supplémentaires).</em></p>
+<p>---</p>
+<h2 id="c6-5">6.4 Validation contrôlée des Scénarios A et B (banc paramétrique multi-sujets)</h2>
+<p>Afin d&#x27;isoler rigoureusement les effets de la taille d&#x27;échantillonnage, du retard visuo-moteur et du transfert inter-sujets sous angle $\kappa$ variable avant la campagne webcam multi-sessions, nous évaluons nos architectures sur le simulateur binoculaire paramétrique <code>research/synthetic_bench.py</code> (écran $2560 \times 1440$ à $60\text{ cm}$, $\sigma_{\text{pose}} = 9^\circ\text{--}10^\circ$, $15\text{--}20\,\%$ de reflets spéculaires sur verres).</p>
+<h3 id="c6-6">6.4.1 Scénario A : efficacité d&#x27;échantillonnage, équivalence ONNX et lag Smooth Pursuit</h3>
+<p><code>DualEyePersonalNet</code> ($70\,482$ paramètres) est entraîné sur des budgets croissants issus d&#x27;une session d&#x27;entraînement de $S_0$ et évalué sur une session de test indépendante ($N_{\text{test}} = 500$, éclairage assombri à $92\,\%$, poses inédites) :</p>
+<table>
+<thead><tr><th>Modèle / Volume d&#x27;entraînement $S_0$</th><th>Erreur moyenne (°)</th><th>IC 95 % bootstrap (°)</th><th>Médiane (°)</th><th>$p_{95}$ (°)</th><th>Yaw MAE (°)</th><th>Pitch MAE (°)</th><th>Temps entraînement CPU (s)</th></tr></thead><tbody>
+<tr><td>Baseline <code>Iris + Pose Ridge</code> ($N = 1600$)</td><td>2,81</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>$< 0{,}1$</td></tr>
+<tr><td><code>DualEyePersonalNet</code> ($N = 100$)</td><td>8,68</td><td>$[8{,}21,\; 9{,}12]$</td><td>7,75</td><td>17,96</td><td>6,30</td><td>5,13</td><td>4,9</td></tr>
+<tr><td><code>DualEyePersonalNet</code> ($N = 250$)</td><td>3,37</td><td>$[3{,}19,\; 3{,}55]$</td><td>3,01</td><td>7,58</td><td>2,13</td><td>2,43</td><td>10,4</td></tr>
+<tr><td><code>DualEyePersonalNet</code> ($N = 500$)</td><td>1,69</td><td>$[1{,}59,\; 1{,}80]$</td><td>1,34</td><td>4,39</td><td>1,26</td><td>1,04</td><td>16,5</td></tr>
+<tr><td><strong><code>DualEyePersonalNet</code> ($N = 1000$)</strong></td><td><strong>1,01</strong></td><td>$[0{,}94,\; 1{,}09]$</td><td><strong>0,74</strong></td><td>2,82</td><td>0,73</td><td>0,66</td><td>32,2</td></tr>
+<tr><td><strong><code>DualEyePersonalNet</code> ($N = 1600$)</strong></td><td><strong>0,70</strong></td><td>$[0{,}65,\; 0{,}76]$</td><td><strong>0,49</strong></td><td><strong>1,94</strong></td><td><strong>0,51</strong></td><td><strong>0,45</strong></td><td><strong>50,0</strong></td></tr>
+</tbody>
+</table>
+<p>L&#x27;export ONNX (<code>opset 17</code>) reproduit les sorties PyTorch avec un écart maximal absolu de <strong>$5{,}72 \times 10^{-6}$ degrés</strong>. Sur la courbe d&#x27;apprentissage, le seuil critique de <strong>$1{,}5^\circ$</strong> est franchi dès $N \approx 650\text{--}1\,000$ échantillons — soit moins d&#x27;une minute de poursuite lisse à $30\text{ fps}$ ($1\,800$ images) — pour un temps d&#x27;entraînement CPU inférieur à la minute.</p>
+<p>Parallèlement, sur une trajectoire Smooth Pursuit de $30\text{ s}$ ($v_{\text{moy}} = 10{,}6^\circ/\text{s}$, $v_{\max} = 22{,}9^\circ/\text{s}$) simulant un retard visuo-moteur vrai $\tau_{\text{true}} = 80{,}0\text{ ms}$, l&#x27;estimateur <code>estimate_visuomotor_lag</code> identifie $\hat{\tau}_{\text{lag}} = \mathbf{85{,}0\text{ ms}}$, réduisant la RMSE de validation croisée de <strong>$79{,}88\text{ px}$</strong> (sans compensation) à <strong>$27{,}28\text{ px}$</strong> ($-65{,}8\,\%$).</p>
+<p><figure><img src="figures/fig4_scenarioA_sample_efficiency_and_lag.png" alt="Courbe d&#x27;apprentissage Scénario A et calibration du retard Smooth Pursuit"><figcaption>Courbe d&#x27;apprentissage Scénario A et calibration du retard Smooth Pursuit</figcaption></figure></p>
+<h3 id="c6-7">6.4.2 Scénario B : transfert inter-sujets depuis un unique sujet $S_0$ vers $S_1 \dots S_5$</h3>
+<p>Tous les modèles ci-dessous sont entraînés <strong>exclusivement sur le sujet $S_0$</strong> ($N = 1\,200$ échantillons), puis testés sur <strong>5 sujets inédits $S_1 \dots S_5$</strong> ($N = 400$ chacun) présentant des angles $\kappa \in [-4{,}5^\circ, +4{,}5^\circ]$, des ouvertures palpébrales, des teintes cutanées/iriennes et des bruits capteur distincts :</p>
+<table>
+<thead><tr><th>Méthode (entraînée sur $S_0$ seul)</th><th>Moyenne $S_1 \dots S_5$ (°)</th><th>Écart-type inter-sujets (°)</th><th>Médiane poolée (°)</th><th>$p_{95}$ poolé (°)</th></tr></thead><tbody>
+<tr><td><code>DualEyePersonalNet</code> Zero-Shot</td><td>3,40</td><td>2,00</td><td>2,40</td><td>7,01</td></tr>
+<tr><td><code>DualEyePersonalNet</code> + Biais 5 ancres</td><td><strong>1,32</strong></td><td>0,26</td><td><strong>1,16</strong></td><td><strong>2,84</strong></td></tr>
+<tr><td><code>DifferentialEyeNet</code> sans aug. ($K = 1$ ancre)</td><td>2,10</td><td>0,42</td><td>1,77</td><td>4,71</td></tr>
+<tr><td><code>DifferentialEyeNet</code> sans aug. ($K = 5$ ancres)</td><td>1,70</td><td>0,33</td><td>1,34</td><td>4,18</td></tr>
+<tr><td><code>DifferentialEyeNet</code> + Morph/Photo Aug ($K = 1$ ancre)</td><td><strong>1,91</strong></td><td><strong>0,23</strong></td><td><strong>1,67</strong></td><td><strong>4,07</strong></td></tr>
+<tr><td><code>DifferentialEyeNet</code> + Morph/Photo Aug ($K = 5$ ancres)</td><td>1,86</td><td><strong>0,14</strong></td><td>1,63</td><td><strong>3,96</strong></td></tr>
+</tbody>
+</table>
+<p><em>(À titre de référence intra-sujet, <code>DifferentialEyeNet</code> + MorphAug atteint $1{,}50^\circ$ sur $S_0^{\text{test}}$ avec $K=5$).</em></p>
+<p><figure><img src="figures/fig5_scenarioB_cross_subject_ablation.png" alt="Ablation de généralisation inter-sujets Scénario B"><figcaption>Ablation de généralisation inter-sujets Scénario B</figcaption></figure></p>
+<p>L&#x27;analyse statistique détaillée de cette ablation met en lumière trois résultats nuancés et instructifs :</p>
+<ul>
+<li><strong>(1) Effondrement du zero-shot direct</strong> : sans ancre de calibration sur $S_k$, <code>DualEyePersonalNet</code> atteint en moyenne $3{,}40^\circ \pm 2{,}00^\circ$, culminant à $6{,}27^\circ$ sur $S_2$ et $5{,}39^\circ$ sur $S_5$, confirmant l&#x27;incapacité d&#x27;un modèle mono-sujet non adapté à inférer un angle $\kappa$ inconnu.</li>
+<li><strong>(2) Apport régularisateur de la randomisation morphologique (<code>MorphAug</code>)</strong> :</li>
+<li>Avec <strong>une seule ancre ($K = 1$)</strong>, <code>MorphAug</code> améliore simultanément la moyenne ($2{,}10^\circ \to 1{,}91^\circ$), la médiane ($1{,}77^\circ \to 1{,}67^\circ$), le pire cas $p_{95}$ ($4{,}71^\circ \to 4{,}07^\circ$) et divise presque par deux la variance inter-sujets ($0{,}42^\circ \to 0{,}23^\circ$).</li>
+<li>Avec <strong>cinq ancres ($K = 5$)</strong>, <code>MorphAug</code> réduit l&#x27;écart-type inter-sujets d&#x27;un facteur <strong>$2{,}3\times$</strong> ($0{,}33^\circ \to \mathbf{0{,}14^\circ}$) et abaisse $p_{95}$ ($4{,}18^\circ \to 3{,}96^\circ$), au prix d&#x27;une légère dérive de $+0{,}16^\circ$ sur la moyenne ($1{,}70^\circ \to 1{,}86^\circ$, test de Wilcoxon apparié $p = 6{,}76 \times 10^{-10}$). L&#x27;inspection de <code>research/augmentations.py</code> explique directement ce compromis : les translations aléatoires $\Delta x, \Delta y \in [-1{,}5, +1{,}5]\text{ px}$ injectent un léger bruit de localisation relative au centre du patch, ce qui régularise les cas extrêmes tout en bornant la précision fine vers $\sim 1{,}8^\circ$.</li>
+<li><strong>(3) Compromis <code>PersonalNet + Biais 5 pts</code> vs <code>DifferentialEyeNet</code> en simulation vs réel</strong> : sur le simulateur où la physique irienne est analytiquement homogène entre sujets, une simple soustraction du biais moyen sur 5 ancres corrige directement $\kappa$ ($1{,}32^\circ \pm 0{,}26^\circ$, Wilcoxon $p = 1{,}01 \times 10^{-75}$ face à <code>DiffNet_MorphAug_K5</code>). En conditions humaines réelles, où la colorimétrie cutanée, le contraste sclère–iris et la géométrie palpébrale divergent bien plus fortement d&#x27;un individu à l&#x27;autre, la normalisation locale en luminance et la structure différentielle à $K = 1$ ancre conservent un avantage décisif d&#x27;invariance d&#x27;entrée.</li>
+</ul>
+<p>---</p>
+<h2 id="c6-8">6.5 Protocole exécutable de campagne webcam humaine (Phase finale)</h2>
+<p>Les scripts de collecte et d&#x27;évaluation automatique sur données humaines réelles sont entièrement implémentés et vérifiés par tests unitaires (<code>tests/test_research.py</code>, 7/7 tests passés). Le workflow reproductible complet est détaillé dans <code>docs/these/GUIDE_ACQUISITION_WEBCAM.md</code> et repose sur trois commandes :</p>
+<pre><code>
+# 1. Collecter 4 a 6 sessions Smooth Pursuit (60 s chacune, conditions variees)
+python -m research.collect_pursuit --duration 60 --tag s1_jour_lunettes --lighting jour
+
+# 2. Enregistrer en arriere-plan 200+ clics pre-saccadiques (-75 ms)
+python -m research.collect_clicks --max-clicks 250 --pre-lag-ms 75 --tag bureau
+
+# 3. Estimer tau_lag, entrainer A &amp; B, executer Wilcoxon et generer fig6
+python -m research.evaluate_human_sessions
+</code></pre></section><section class="chapter"><h1 id="c7-0">Chapitre 7 — Discussion Critique, Menaces à la Validité et Perspectives</h1>
+<p>Un dossier de recherche rigoureux exige de distinguer explicitement ce qui a été <strong>démontré sur données humaines réelles</strong>, ce qui a été <strong>vérifié sur banc paramétrique contrôlé</strong>, et les <strong>limites physiques ou méthodologiques</strong> qui subsistent avant une déploiement industriel à grande échelle.</p>
+<h2 id="c7-1">7.1 Validité interne, externe et limites du régime mono-sujet</h2>
+<h3 id="c7-2">7.1.1 Limites de la validation sur banc synthétique pour le Scénario B</h3>
+<p>Nos ablations inter-sujets du Chapitre 6 ($S_0 \to S_1 \dots S_5$) prouvent mathématiquement qu&#x27;une architecture siamoise différentielle munie de randomisation morphologique surmonte la mémorisation d&#x27;identité et l&#x27;écart d&#x27;angle $\kappa$ là où un régresseur direct échoue. Toutefois, le simulateur <code>research/synthetic_bench.py</code> modélise la géométrie oculaire de façon idéalisée (iris circulaire, paupières elliptiques symétriques, absence d&#x27;occlusion ciliaire complexe ou de double réflexion de monture épaisse).</p>
+<p>En conditions humaines réelles sur des sujets distincts, des facteurs non modélisés apparaîtront : ptôse palpébrale marquée, plis épicanthiques, verres progressifs ou fort astigmatisme induisant une distorsion optique locale du limbe. Par conséquent, <strong>l&#x27;entraînement sur un seul visage humain réel doit être considéré comme un levier d&#x27;amorçage fort</strong>, et non comme un substitut absolu à une validation humaine multi-sujets (même réduite à 5–10 volontaires consentants pour le test externe final).</p>
+<h3 id="c7-3">7.1.2 Validité du Smooth Pursuit comme vérité terrain</h3>
+<p>En poursuite lisse lente ($< 15^\circ/\text{s}$), l&#x27;hypothèse d&#x27;une erreur humaine intrinsèque $< 0{,}5^\circ$ repose sur une attention soutenue du sujet. En cas de micro-distraction ou de fatigue oculaire au-delà de 60 secondes, des saccades intrusives peuvent introduire des étiquettes bruitées. Deux garde-fous logiciels limitent ce risque :</p>
+<ol>
+<li>Des sessions courtes de $60\text{ s}$ réparties dans des conditions variées (matin, soir, lampe frontale, lumière tamisée, avec/sans lunettes) ;</li>
+<li>L&#x27;emploi d&#x27;une perte robuste (<code>SmoothL1Loss</code>) et le rejet automatique des clignements via <code>BlinkDetector</code>.</li>
+</ol>
+<h3 id="c7-4">7.1.3 Impact des verres correcteurs et du contre-jour</h3>
+<p>Conformément aux observations de Li et al. (Huawei, 2026) et aux mesures d&#x27;<code>Eyetrack</code> (<code>face.py</code>), la présence de lunettes demeure la première source de variance dans les coins de l&#x27;écran : les bords de monture et les reflets d&#x27;écran ou de lampe de bureau peuvent recouvrir plus de $15\,\%$ du disque irien. Si l&#x27;alerte de reflet pendant la calibration prévient la corruption du jeu de référence, la robustesse en jeu requiert à la fois des augmentations spéculaires réalistes à l&#x27;entraînement et une gestion explicite de l&#x27;incertitude (pondération du filtre One Euro ou repli temporaire sur la pose 6DoF lorsque le reflet dépasse le seuil critique).</p>
+<h2 id="c7-5">7.2 Enjeux juridiques et propriété intellectuelle</h2>
+<p>L&#x27;architecture proposée résout intégralement la dépendance aux poids non commerciaux :</p>
+<ul>
+<li><strong>Détection faciale</strong> : MediaPipe FaceLandmarker est distribué sous licence <strong>Apache 2.0</strong> (usage commercial autorisé).</li>
+<li><strong>Modèles de regard (<code>DualEyePersonalNet</code> / <code>DifferentialEyeNet</code>)</strong> : architectures originales ($< 71\text{ k}$ paramètres) entraînées exclusivement sur les données personnelles consenties de l&#x27;auteur et/ou des données synthétiques permissives, sans distillation depuis UniGaze ou Gaze360.</li>
+<li><strong>Vigilance brevets</strong> : avant toute commercialisation en Europe ou aux États-Unis, l&#x27;analyse de liberté d&#x27;exploitation devra examiner les revendications exactes des familles EP3953859B1 (estimation de paramètres oculaires géométriques personnels) et WO2022084803A1 (auto-calibration). L&#x27;approche purement différentielle par apparence sur patchs normalisés se distingue toutefois des modèles géométriques génératifs du globe oculaire décrits dans le brevet fondateur EP3154407B1.</li>
+</ul>
+<h2 id="c7-6">7.3 Feuille de route vers l&#x27;intégration produit et la thèse finalisée</h2>
+<p>Pour transformer ce dossier en système livrable de niveau industriel et académique accompli :</p>
+<ol>
+<li><strong>Campagne d&#x27;acquisition humaine multi-sessions (J+1 à J+3)</strong> : enregistrer 6 à 10 sessions de 60 secondes (<code>python -m research.collect_pursuit</code>) en variant éclairage, posture, distance et port de lunettes, complétées par 500–1 000 clics passifs (<code>python -m research.collect_clicks</code>), puis exécuter la ré-évaluation croisée stricte sur session de test indépendante + <code>tools/validate.py</code> (cibles fixes 9 points avec mouvement de tête).</li>
+<li><strong>Intégration dans <code>gaze_model.py</code> et calibration hybride</strong> : ajouter un mode <code>&#x27;personal_onnx&#x27;</code> dans <code>create_gaze_estimator</code> remplaçant <code>MobileOne-S0</code> ($11{,}16\text{ ms}$) par <code>DualEyePersonalNet</code> ($0{,}25\text{ ms}$), libérant plus de $10\text{ ms}$ par frame sur CPU.</li>
+<li><strong>Estimation d&#x27;incertitude hétéroscédastique</strong> : ajouter une sortie de variance $\hat{\sigma}^2 = (\sigma_\psi^2, \sigma_\theta^2)$ entraînée par log-vraisemblance gaussienne négative pour moduler dynamiquement la fréquence de coupure $f_{c,\min}$ du filtre One Euro et rejeter automatiquement les frames dégradées par un reflet.</li>
+<li><strong>Portage natif Rust (<code>ort</code>)</strong> : tirer parti de l&#x27;absence d&#x27;opérateurs dynamiques dans <code>DualEyePersonalNet</code> (grâce à <code>AvgPool2d(1, 2)</code> statique et grille <code>CoordConv</code> figée) pour déployer un moteur d&#x27;inférence C ABI / Rust à $< 5\text{ ms}$ totaux de bout en bout.</li>
+</ol>
+<h2 id="c7-7">7.4 Conclusion générale</h2>
+<p>Ce travail démontre qu&#x27;il est possible de dépasser le compromis classique entre précision, latence CPU et indépendance juridique dans l&#x27;estimation du regard par webcam RGB. En remplaçant les lourds réseaux génériques plein-visage par un découplage géométrique bi-oculaire léger, en exploitant l&#x27;acquisition continue par poursuite lisse compensée du retard visuo-moteur et le tampon pré-saccadique sur clics, et en résolvant le transfert inter-sujets depuis un unique utilisateur par modélisation différentielle antisymétrique et randomisation morphologique, <code>Eyetrack</code> pose les bases rigoureuses d&#x27;un système à la fois scientifique, temps réel et librement distribuable.</p></section>
+<section class="chapter"><h1 id="bib">Bibliographie</h1><ul class="bib"><li><strong>[zhang2018revisiting]</strong> Zhang, Xucong and Sugano, Yusuke and Bulling, Andreas, « Revisiting Data Normalization for Appearance-Based Gaze Estimation », Proceedings of the ACM Symposium on Eye Tracking Research &amp; Applications (ETRA), 2018</li>
+<li><strong>[sugano2014learning]</strong> Sugano, Yusuke and Matsushita, Yasuyuki and Sato, Yoichi, « Learning-by-Synthesis for Appearance-Based 3D Gaze Estimation », Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2014</li>
+<li><strong>[krafka2016eye]</strong> Krafka, Kyle and Khosla, Aditya and Kellnhofer, Petr and Kannan, Harini and Bhandarkar, Suchendra and Matusik, Wojciech and Torralba, Antonio, « Eye Tracking for Everyone », Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2016</li>
+<li><strong>[zhang2017spatial]</strong> Zhang, Xucong and Sugano, Yusuke and Fritz, Mario and Bulling, Andreas, « It&#x27;s Written All Over Your Face: Full-Face Appearance-Based Gaze Estimation », IEEE Conference on Computer Vision and Pattern Recognition Workshops (CVPRW), 2017</li>
+<li><strong>[kellnhofer2019gaze360]</strong> Kellnhofer, Petr and Recasens, Adria and Stent, Simon and Matusik, Wojciech and Torralba, Antonio, « Gaze360: Physically Unconstrained Gaze Estimation in the Wild », Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), 2019</li>
+<li><strong>[zhang2020ethxgaze]</strong> Zhang, Xucong and Park, Seonwook and Beeler, Thabo and Bradley, Derek and Tang, Siyu and Hilliges, Otmar, « ETH-XGaze: A Large Scale Dataset for Gaze Estimation Under Extreme Head Pose and Gaze Variation », European Conference on Computer Vision (ECCV), 2020</li>
+<li><strong>[park2020eve]</strong> Park, Seonwook and Aksan, Emre and Zhang, Xucong and Hilliges, Otmar, « Towards End-to-End Video-Based Eye-Tracking », European Conference on Computer Vision (ECCV), 2020</li>
+<li><strong>[park2019faze]</strong> Park, Seonwook and Mello, Shalini De and Molchanov, Pavlo and Iqbal, Umar and Hilliges, Otmar and Kautz, Jan, « Few-Shot Adaptive Gaze Estimation », Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), 2019</li>
+<li><strong>[liu2018differential]</strong> Liu, Gang and Yu, Yu and Funes Mora, Kenneth Alberto and Odobez, Jean-Marc, « A Differential Approach for Gaze Estimation », British Machine Vision Conference (BMVC), 2018, arXiv:1904.09459</li>
+<li><strong>[cheng2020canet]</strong> Cheng, Yihua and Huang, Shiyao and Wang, Fei and Qian, Chen and Lu, Feng, « A Coarse-to-Fine Adaptive Network for Appearance-Based Gaze Estimation », AAAI Conference on Artificial Intelligence, 2020</li>
+<li><strong>[cheng2022gazetr]</strong> Cheng, Yihua and Lu, Feng, « Gaze Estimation using Transformer », International Conference on Pattern Recognition (ICPR), 2022</li>
+<li><strong>[cheng2024review]</strong> Cheng, Yihua and Wang, Haofei and Bao, Yiwei and Lu, Feng, « Appearance-based Gaze Estimation With Deep Learning: A Review and Benchmark », IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI), 2024, arXiv:2104.12668</li>
+<li><strong>[abdelrahman2023l2cs]</strong> Abdelrahman, Ahmed A. and Hempel, Thorsten and Khalifa, Aly and Al-Hamadi, Ayoub and Dinges, Laslo, « L2CS-Net: Fine-Grained Gaze Estimation in Unconstrained Environments », IEEE International Conference on Image Processing (ICIP), 2023, arXiv:2203.03339</li>
+<li><strong>[qin2026unigaze]</strong> Qin, Zhiming and Zhang, Xucong and Sugano, Yusuke, « UniGaze: Towards Universal Gaze Estimation via Large-scale Pre-Training », IEEE/CVF Winter Conference on Applications of Computer Vision (WACV), 2026, arXiv:2502.02307</li>
+<li><strong>[qu2025omnigaze]</strong> Qu, Yuting and others, « OmniGaze: Reward-inspired Generalizable Gaze Estimation in the Wild », Advances in Neural Information Processing Systems (NeurIPS), 2025, arXiv:2510.13660</li>
+<li><strong>[li2026opendomains]</strong> Li, Zheng and others, « Real-time Appearance-based Gaze Estimation for Open Domains », arXiv preprint arXiv:2603.26945, 2026</li>
+<li><strong>[papoutsaki2016webgazer]</strong> Papoutsaki, Alexandra and Sangkloy, Patsorn and Laskey, James and Daskalova, Nediyana and Huang, Jeff and Hays, James, « WebGazer: Scalable Webcam Eye Tracking Using User Interactions », Proceedings of the International Joint Conference on Artificial Intelligence (IJCAI), 2016</li>
+<li><strong>[onlineeye2025]</strong> « Online-EYE: Multimodal Implicit Eye Tracking Calibration for XR », Proceedings of the CHI Conference on Human Factors in Computing Systems, 2025, DOI: 10.1145/3706598.3713461</li>
+<li><strong>[casiez2012oneeuro]</strong> Casiez, Géry and Roussel, Nicolas and Vogel, Daniel, « 1€ Filter: A Simple Speed-based Low-pass Filter for Noisy Input in Interactive Systems », Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI), 2012</li>
+<li><strong>[funes2014eyediap]</strong> Funes Mora, Kenneth Alberto and Monay, Florent and Odobez, Jean-Marc, « EYEDIAP: A Database for the Development and Evaluation of Gaze Estimation Algorithms from RGB and RGB-D Cameras », Proceedings of the ACM Symposium on Eye Tracking Research &amp; Applications (ETRA), 2014</li>
+<li><strong>[funes2016rgbd]</strong> Funes Mora, Kenneth Alberto and Odobez, Jean-Marc, « Gaze Estimation in the 3D Space Using RGB-D Sensors », International Journal of Computer Vision (IJCV), 2016</li>
+<li><strong>[liu2018coordconv]</strong> Liu, Rosanne and Lehman, Joel and Molino, Piero and Petroski Such, Felipe and Frank, Eric and Sergeev, Alex and Yosinski, Jason, « An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution », Advances in Neural Information Processing Systems (NeurIPS), 2018</li>
+<li><strong>[vasu2023mobileone]</strong> Vasu, Pavan Kumar Anasosalu and Gabriel, James and Zhu, Jeff and Tuzel, Oncel and Ranjan, Anurag, « MobileOne: An Improved One Millisecond Mobile Backbone », Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2023</li>
+<li><strong>[ibm2026validation]</strong> « Validation of webcam-based eye-tracking for clinically relevant paradigms », Intelligence-Based Medicine, 2026</li>
+<li><strong>[wood2016unityeyes]</strong> Wood, Erroll and Baltrušaitis, Tadas and Morency, Louis-Philippe and Robinson, Peter and Bulling, Andreas, « Learning an Appearance-Based Gaze Estimator from One Million Synthesised Images », Proceedings of the ACM Symposium on Eye Tracking Research &amp; Applications (ETRA), 2016</li></ul></section>
+</body>
+</html>

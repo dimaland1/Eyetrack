@@ -54,7 +54,7 @@ def download_gaze_model(dest: str | None = None, url: str = MODEL_URL, sha256: s
                         timeout: float = 30.0) -> str:
     """Télécharge le modèle depuis sa source officielle (à appeler seulement après l'accord de
     l'utilisateur sur sa licence). Vérifie l'empreinte SHA-256 avant de le mettre en place."""
-    dest = dest or gaze_model_path()
+    dest = dest or str(USER_MODELS_DIR / MODEL_FILE)  # jamais le nom du modèle de repli
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     part = dest + ".part"
     digest = hashlib.sha256()
@@ -163,6 +163,9 @@ class NetGazeEstimator:
                 automatiquement : FileNotFoundError s'il est absent.
         """
         self.model_path = model_path or gaze_model_path()
+        # Nom du modèle chargé : enregistré avec la calibration (une calibration faite avec un
+        # autre modèle de regard ne vaut rien et doit être refaite)
+        self.model_name = os.path.basename(self.model_path)
         if not os.path.isfile(self.model_path):
             raise FileNotFoundError(f"Modèle de regard absent : {self.model_path}")
         self._iris = IrisGazeEstimator()

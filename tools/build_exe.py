@@ -36,7 +36,7 @@ DIST_DIR = ROOT / "dist" / "Eyetrack"
 MODELS = ["face_landmarker.task"]  # fournis dans le paquet (Apache 2.0)
 # Modèle de regard de précision : licence non commerciale d'un tiers, jamais dans le paquet ni
 # l'installeur. Sert seulement à l'auto-test, et copié pour l'utilisateur de CE PC (sa copie).
-GAZE_MODEL = ROOT / "models" / "mobileone_s0_gaze.onnx"
+GAZE_MODEL = ROOT / "models" / "mobilenetv2_gaze.onnx"  # = gaze_model.MODEL_FILE (vérifié par les tests)
 DATA_TO_COPY = ["calibration_*.npz", "calibration_samples_*.npz", "camera_mode.json", "app_settings.json"]
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 

@@ -368,11 +368,11 @@ class ControlPanel:
         """Accord de l'utilisateur sur la licence du modèle (tiers, non commercial) avant de le télécharger."""
         ok = messagebox.askyesno(
             tr("Modèle de regard de précision"),
-            tr("Le modèle de regard de précision (MobileOne-S0, entraîné sur le jeu de données Gaze360) n'est pas "
+            tr("Le modèle de regard de précision (MobileNetV2, entraîné sur le jeu de données Gaze360) n'est pas "
                "fourni avec Eyetrack : il appartient à un tiers et sa licence n'autorise qu'un usage non "
                "commercial.\n\nEyetrack peut le télécharger pour vous depuis sa source officielle :\n{source}\n\n"
                "En acceptant, vous déclarez l'utiliser à titre personnel et non commercial, conformément à sa "
-               "licence. Télécharger maintenant (5 Mo) ?", source=self._status.get("model_source", "")),
+               "licence. Télécharger maintenant (10 Mo) ?", source=self._status.get("model_source", "")),
             parent=self._root)
         if ok:
             self._send("action", "download_model")

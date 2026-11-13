@@ -20,7 +20,9 @@ from paths import data_path
 import winapp
 
 
-CALIB_FORMAT_VERSION = 5  # v5 : features réseau = point d'impact (mm) + ratios d'iris
+# v5 : features réseau = point d'impact (mm) + ratios d'iris
+# v6 : features compensées de la fuite de rotation de tête (VOR) + nom du modèle de regard enregistré
+CALIB_FORMAT_VERSION = 6
 # Régularisation Ridge par mode (validation croisée : 1e-2 le mieux en net, 1e-3 en iris)
 RIDGE_ALPHA = {"net": 1e-2, "iris": 1e-3}
 # Écart-type minimal par feature : une feature qui n'a presque pas varié pendant la
@@ -234,8 +236,11 @@ class AffineGazeModel:
         pred = self._design(gaze_raw, head_pose) @ self.weights
         return float(pred[0, 0]), float(pred[0, 1])
 
-    def save(self, filepath: str) -> None:
-        """Sauvegarde les poids, la standardisation et la covariance RLS dans un .npz."""
+    def save(self, filepath: str, model_name: str = "") -> None:
+        """Sauvegarde les poids, la standardisation et la covariance RLS dans un .npz.
+
+        `model_name` : fichier du modèle de regard utilisé (vide en mode iris).
+        """
         if not self.is_fitted or self.weights is None:
             raise RuntimeError("Impossible de sauvegarder un modèle non entraîné.")
         np.savez(
@@ -248,6 +253,7 @@ class AffineGazeModel:
             alpha=self.alpha,
             mode=self.mode,
             quality_deg=self.quality_deg,
+            gaze_model=model_name,
         )
 
     def load(self, filepath: str) -> bool:
@@ -265,6 +271,7 @@ class AffineGazeModel:
             self.P = data["P"]
             self.alpha = float(data["alpha"])
             self.quality_deg = float(data["quality_deg"]) if "quality_deg" in data.files else float("nan")
+            self.model_name = str(data["gaze_model"]) if "gaze_model" in data.files else ""
             self.is_fitted = True
             return True
         except Exception as e:
@@ -489,9 +496,13 @@ class CalibrationManager:
         screen_config: ScreenConfig,
         mode: str = "net",
         num_points: int = 9,
+        model_name: str = "",
     ) -> None:
         self.screen_config = screen_config
         self.mode = mode
+        # Modèle de regard utilisé (nom de fichier ONNX, vide en mode iris) : une calibration faite
+        # avec un autre modèle est refusée au chargement
+        self.model_name = model_name
         self.num_points = num_points
         self.model = AffineGazeModel(mode=mode, alpha=RIDGE_ALPHA.get(mode, 1e-3))
         self.is_calibrated = False
@@ -833,7 +844,7 @@ class CalibrationManager:
 
     def save(self, filepath: str = "calibration.npz") -> None:
         """Sauvegarde l'état de calibration dans un fichier."""
-        self.model.save(filepath)
+        self.model.save(filepath, model_name=self.model_name)
 
     def load(self, filepath: str = "calibration.npz") -> bool:
         """Charge l'état de calibration depuis un fichier en vérifiant la compatibilité du mode."""
@@ -847,6 +858,11 @@ class CalibrationManager:
 
         if loaded_model.mode != self.mode:
             print(f"[calibration] '{filepath}' ({loaded_model.mode}) n'est pas compatible avec le mode '{self.mode}'.")
+            return False
+        saved = getattr(loaded_model, "model_name", "")
+        if self.model_name and saved != self.model_name:
+            print(f"[calibration] '{filepath}' a été faite avec le modèle de regard '{saved or 'inconnu'}', "
+                  f"le modèle actuel est '{self.model_name}' : nouvelle calibration nécessaire.")
             return False
 
         self.model = loaded_model

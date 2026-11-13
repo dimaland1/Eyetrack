@@ -243,6 +243,7 @@ def main() -> None:
         screen_config=screen_config,
         mode=args.gaze_mode,
         num_points=args.calib_points,
+        model_name=getattr(gaze_estimator, "model_name", ""),  # calibration liée au modèle de regard
     )
     import os
     if os.path.exists(calib_file):

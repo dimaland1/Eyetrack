@@ -125,16 +125,16 @@ EN: dict[str, str] = {
     # ------------------------------------------------------------------ modèle de regard de précision
     "Modèle de précision…": "Precision model…",
     "Modèle de regard de précision": "Precision gaze model",
-    "Le modèle de regard de précision (MobileOne-S0, entraîné sur le jeu de données Gaze360) n'est pas "
+    "Le modèle de regard de précision (MobileNetV2, entraîné sur le jeu de données Gaze360) n'est pas "
     "fourni avec Eyetrack : il appartient à un tiers et sa licence n'autorise qu'un usage non "
     "commercial.\n\nEyetrack peut le télécharger pour vous depuis sa source officielle :\n{source}\n\n"
     "En acceptant, vous déclarez l'utiliser à titre personnel et non commercial, conformément à sa "
-    "licence. Télécharger maintenant (5 Mo) ?":
-        "The precision gaze model (MobileOne-S0, trained on the Gaze360 dataset) is not included with "
+    "licence. Télécharger maintenant (10 Mo) ?":
+        "The precision gaze model (MobileNetV2, trained on the Gaze360 dataset) is not included with "
         "Eyetrack: it belongs to a third party and its license only allows non-commercial use.\n\n"
         "Eyetrack can download it for you from its official source:\n{source}\n\n"
         "By accepting, you state that you will use it for personal, non-commercial purposes, as its "
-        "license requires. Download it now (5 MB)?",
+        "license requires. Download it now (10 MB)?",
     " - mode simple": " - simple mode",
     " - mode simple (sans modèle)": " - simple mode (no model)",
     " - téléchargement…": " - downloading…",

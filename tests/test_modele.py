@@ -56,6 +56,10 @@ class TestModele(unittest.TestCase):
             self.assertNotIn("Source: \"" + gaze_model.MODEL_FILE, text)
             self.assertIn(gaze_model.MODEL_SHA256, text)  # même empreinte que l'application
             self.assertIn(gaze_model.MODEL_URL, text)
+            self.assertIn(f'#define ModelFile "{gaze_model.MODEL_FILE}"', text)
+        # Copie pour l'utilisateur de ce PC et auto-test de l'exe : le même modèle que l'application
+        with open(os.path.join(ROOT, "tools", "build_exe.py"), encoding="utf-8") as f:
+            self.assertIn(f'"models" / "{gaze_model.MODEL_FILE}"', f.read())
 
     def test_empreinte_du_modele_local(self):
         local = os.path.join(ROOT, "models", gaze_model.MODEL_FILE)

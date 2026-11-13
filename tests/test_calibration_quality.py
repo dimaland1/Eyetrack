@@ -107,6 +107,24 @@ class TestSauvegarde(unittest.TestCase):
             self.assertTrue(mgr2.load(f))
             self.assertEqual(mgr2.quality_label, "inconnue")
 
+    def test_calibration_liee_au_modele_de_regard(self):
+        # Une calibration faite avec un autre modèle de regard (ou l'ancien calcul) est refusée :
+        # l'écran d'accueil propose alors d'en refaire une
+        pts = synthetic_points()
+        m = AffineGazeModel(mode="net", alpha=1e-2)
+        m.fit(np.vstack([p[0] for p in pts]), np.vstack([p[1] for p in pts]),
+              np.vstack([np.tile(p[2], (40, 1)) for p in pts]))
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "c.npz")
+            m.save(f, model_name="mobilenetv2_gaze.onnx")
+            self.assertTrue(CalibrationManager(SC, mode="net", model_name="mobilenetv2_gaze.onnx").load(f))
+            self.assertFalse(CalibrationManager(SC, mode="net", model_name="mobileone_s0_gaze.onnx").load(f))
+            self.assertTrue(CalibrationManager(SC, mode="net").load(f))  # outils : pas de vérification
+            data = dict(np.load(f))
+            data["version"] = np.array(5)  # calcul d'avant la compensation de la fuite de tête
+            np.savez(f, **data)
+            self.assertFalse(CalibrationManager(SC, mode="net", model_name="mobilenetv2_gaze.onnx").load(f))
+
 
 class TestReflets(unittest.TestCase):
     def frame_and_face(self, glare_radius: int = 0):

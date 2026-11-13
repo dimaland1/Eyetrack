@@ -200,8 +200,9 @@ winapp.py           application sans console : journal, fenêtres d'erreur, inst
 capture.py          webcam : choix automatique du mode qui délivre le plus d'images
 face.py             MediaPipe Face Landmarker (478 points, iris, pose 6DoF), mode vidéo
 normalize.py        normalisation du visage (Zhang 2018) à partir des landmarks
-gaze_model.py       regard : ratios d'iris ou réseau MobileOne-S0 (ONNX)
-calibration.py      calibration Ridge + recalibration RLS sur les clics
+gaze_model.py       regard : ratios d'iris (mode simple) ou réseau MobileNetV2 (ONNX, fourni par
+                    l'utilisateur ; MobileOne-S0 accepté en repli), téléchargement vérifié
+calibration.py      calibration Ridge (fuite de tête compensée, centroïdes robustes) + RLS sur les clics
 filters.py          filtre One Euro (+ médian), maintien et fondu en cas de perte du visage
 geometry.py         géométrie de l'écran (mm, pixels, angles)
 output.py           envoi UDP OpenTrack (120 Hz, prédiction, pause), courbe du regard, HUD
@@ -213,10 +214,13 @@ profile.py          profils JSON par jeu
 
 profiles/           profils de jeux (versionnés)
 tools/              diagnostics : diag_regard.py, diag_stabilite.py, validate.py ; make_icon.py ;
-                    build_exe.py (construit et installe Eyetrack.exe)
+                    build_exe.py (construit et installe Eyetrack.exe ; --installer : Eyetrack-Setup.exe)
+installer/          script Inno Setup de l'installeur (eyetrack.iss)
+research/           pipeline expérimental (collecte solo, modèles personnels et différentiels,
+                    évaluations) : hors du tracker, voir docs/these/
 assets/             icône de l'application (eyetrack.ico)
-tests/              tests automatiques (sens des axes, envoi OpenTrack, raccourcis, panneau)
-docs/               état de l'art de l'eye tracking webcam
+tests/              tests automatiques (axes, envoi OpenTrack, capture, calibration, langue, modèle…)
+docs/               état de l'art de l'eye tracking webcam ; docs/these/ : dossier scientifique
 models/             modèles téléchargés (hors git)
 data/               calibrations, cache caméra, sorties de diagnostic (hors git)
 ```
@@ -245,34 +249,35 @@ OpenTrack), l'absence de faux pitch tête tournée, le sens du regard, la pause,
 prédiction, l'envoi à 120 Hz et les raccourcis. À relancer après toute modification de
 `face.py` ou `output.py` : un test qui échoue = un axe qui partirait du mauvais côté en jeu.
 
-## Améliorations pour la prochaine fois
+## État et suite
 
-La phase 1 (solidifier) est faite : raccourcis globaux, envoi à 120 Hz avec prédiction,
-recalibration au clic protégée en jeu, tests du sens des axes. Restent à vérifier en jeu :
-la fluidité réelle avec la vraie caméra (regarder « plus long trou » dans le panneau) et le confort des
-raccourcis par défaut.
+Fait :
 
-Ensuite :
+- **Phase 1 — solidifier** : raccourcis globaux, envoi à 120 Hz avec prédiction (plus long trou
+  mesuré : 10 ms), recalibration au clic protégée en jeu, tests du sens des axes.
+- **Phase 2 — confort** : panneau de contrôle, aperçu caméra, calibration guidée, alerte reflets,
+  icône de la zone de notification.
+- **Phase 3 — exécutable et installeur** : `Eyetrack.exe` sans terminal, écran d'accueil et
+  calibration au premier lancement (au premier plan), interface français / anglais, installeur
+  `Eyetrack-Setup.exe` (OpenTrack proposé, modèle de regard jamais fourni).
+- **Précision** : webcam en 720p MJPG (au lieu de 640×480 non compressé), compensation de la
+  fuite de rotation de tête, centroïdes robustes, réseau MobileNetV2, overlay stabilisé. Les
+  calibrations d'avant (format v5 ou autre modèle) sont refusées : en refaire une.
 
-- **Phase 2 — confort** : faite (panneau de contrôle, aperçu caméra, calibration guidée, alerte
-  reflets, icône de la zone de notification). À confirmer avec la vraie caméra et les lunettes :
-  les seuils de reflet (« léger » dès 5 % de l'iris, « gênant » dès 15 %, valeur affichée dans
-  l'aperçu caméra), choisis sans mesure réelle.
-- **Phase 3 — exécutable** : `Eyetrack.exe` fait (sans terminal, raccourci sur le Bureau,
-  dernier profil repris, OpenTrack ouvert automatiquement, instance unique, erreurs en fenêtre,
-  calibration proposée au premier lancement). Reste, seulement pour le donner à quelqu'un
-  d'autre : un vrai installateur, un assistant de premier lancement complet (choix de la caméra,
-  taille de l'écran, distance) et un profil OpenTrack fourni (entrée
-  UDP, Accela, axes réglés). Avant toute diffusion, régler les licences : le modèle de regard est
-  non commercial.
-- **Phase 4 — bonus** : changement de profil automatique selon le jeu lancé, courbes de
-  réponse de la tête (douces au centre, fortes sur les côtés), presets par jeu liant profil
-  tracker et profil OpenTrack.
+À faire :
+
+- mesurer la précision réelle avec la nouvelle calibration (comparer aux 3,2° d'avant) ;
+- seuils de reflet (« léger » dès 5 % de l'iris, « gênant » dès 15 %) à confirmer en vrai ;
+- pour diffuser : profil OpenTrack fourni (entrée UDP, Accela, axes réglés), signature de
+  l'exécutable (SmartScreen), fichier LICENSE ; avant toute vente, un modèle de regard sous
+  licence libre (piste du dossier `docs/these/`, scénario B) ;
+- bonus : changement de profil automatique selon le jeu, courbes de réponse de la tête, presets
+  par jeu liant profil tracker et profil OpenTrack.
 
 ## Licences
 
-Le modèle de regard (`mobileone_s0_gaze.onnx`, projet yakhyo/gaze-estimation) est entraîné
-sur Gaze360 : usage **non commercial**. Il n'est donc **jamais fourni** avec Eyetrack (ni dans
+Le modèle de regard (`mobilenetv2_gaze.onnx`, ou `mobileone_s0_gaze.onnx` en repli, projet
+yakhyo/gaze-estimation) est entraîné sur Gaze360 : usage **non commercial**. Il n'est donc **jamais fourni** avec Eyetrack (ni dans
 l'exécutable, ni dans l'installeur) : l'utilisateur le télécharge lui-même depuis sa source
 officielle, après avoir accepté sa licence (installeur ou panneau), dans
 `%LOCALAPPDATA%\Eyetrack\models`. Sans lui, Eyetrack fonctionne en mode simple (MediaPipe

@@ -44,6 +44,10 @@ from profile import (
     save_profile,
     list_profiles,
     initialize_all_default_profiles,
+    AutoProfile,
+    detect_game,
+    game_name,
+    game_profile_map,
 )
 
 
@@ -367,12 +371,13 @@ def main() -> None:
         pose_filter.set_params(min_cutoff=prof.pose_min_cutoff, beta=prof.pose_beta)
         gaze_filter.set_params(min_cutoff=prof.gaze_min_cutoff, beta=prof.gaze_beta, median_window=prof.gaze_median)
 
-    def switch_profile(name: str) -> None:
-        """Charge et applique un autre profil."""
+    def switch_profile(name: str, remember: bool = True) -> None:
+        """Charge et applique un autre profil (remember : repris au prochain lancement)."""
         nonlocal current_profile, current_prof_idx, available_profiles, profile_version, profile_values
         available_profiles = list_profiles()
         current_profile = load_profile(name)
-        app_settings.update(last_profile=current_profile.name)
+        if remember:  # un profil choisi automatiquement pour un jeu ne devient pas le profil habituel
+            app_settings.update(last_profile=current_profile.name)
         if current_profile.name in available_profiles:
             current_prof_idx = available_profiles.index(current_profile.name)
         apply_profile_settings(current_profile)
@@ -395,7 +400,11 @@ def main() -> None:
     # OpenTrack ouvert ? (vérifié toutes les 2 s ; inconnu si OpenTrack tourne sur un autre PC)
     opentrack_local = args.host in ("127.0.0.1", "localhost", "::1")
     opentrack_running: bool | None = None
-    next_opentrack_check = 0.0
+    next_opentrack_check = 0.0  # programmes lancés (OpenTrack, jeux) vérifiés toutes les 2 s
+    # Profil selon le jeu lancé (ETS2, BeamNG…), retour au profil d'avant à sa fermeture
+    auto_profile = AutoProfile()
+    game_map = game_profile_map()
+    detected_game: tuple[str, str] | None = None
 
     def read_for_calibration():
         """Capture pour la calibration avec le même effet miroir que la boucle principale.
@@ -674,9 +683,28 @@ def main() -> None:
                 diag_text += "\n" + tr("Agitation (1 s, si immobile) : tête {head}°, regard {gaze} px",
                                        head=f"{jitter['head_deg']:.2f}", gaze=f"{jitter['gaze_px']:.0f}")
             diag_text += "\n" + tr("Reflets sur les iris : {pct} %", pct=f"{glare_level * 100:.1f}")
-            if opentrack_local and panel is not None and time.perf_counter() >= next_opentrack_check:
+            check_opentrack = opentrack_local and panel is not None
+            if (check_opentrack or app_cfg["auto_profile"]) and time.perf_counter() >= next_opentrack_check:
                 next_opentrack_check = time.perf_counter() + 2.0
-                opentrack_running = winapp.is_process_running(winapp.OPENTRACK_EXE)
+                running = winapp.running_processes()  # une seule liste pour OpenTrack et les jeux
+                if check_opentrack:
+                    opentrack_running = winapp.OPENTRACK_EXE in running
+                if app_cfg["auto_profile"]:
+                    closing_game = auto_profile.game
+                    detected_game = detect_game(running, game_map)
+                    target = auto_profile.update(detected_game, current_profile.name)
+                    if target is not None:
+                        switch_profile(target, remember=False)
+                        if detected_game is not None:
+                            print(f"[profile] {game_name(detected_game[1])} détecté : profil {target} chargé")
+                            title, body = (tr("Profil « {profile} » chargé", profile=target),
+                                           tr("{game} détecté.", game=game_name(detected_game[1])))
+                        else:
+                            print(f"[profile] {game_name(closing_game or '')} fermé : retour au profil {target}")
+                            title, body = (tr("Profil « {profile} » rétabli", profile=target),
+                                           tr("{game} fermé.", game=game_name(closing_game or "")))
+                        if tray is not None:
+                            tray.notify(title, body)
 
             def panel_status(calibrating: bool = False) -> dict:
                 return {
@@ -691,7 +719,11 @@ def main() -> None:
                     "calib_quality": calibration_mgr.quality_label, "calib_deg": calibration_mgr.quality_deg,
                     "opentrack_running": opentrack_running,
                     "gaze_model": gaze_model_state, "model_source": MODEL_SOURCE,
+                    "auto_game": (game_name(detected_game[1]) if detected_game and app_cfg["auto_profile"]
+                                  else ""),
+                    "auto_game_profile": detected_game[0] if detected_game else "",
                     "app_settings": {"launch_opentrack": app_cfg["launch_opentrack"],
+                                     "auto_profile": app_cfg["auto_profile"],
                                      "language": app_cfg["language"]},
                 }
 
@@ -731,6 +763,9 @@ def main() -> None:
                     continue
                 if kind == "app":  # réglage de l'application (pas du profil), enregistré tout de suite
                     app_cfg = app_settings.update(**{command[1]: command[2]})
+                    if command[1] == "auto_profile" and not app_cfg["auto_profile"]:
+                        auto_profile = AutoProfile()  # désactivé : plus aucun retour automatique
+                        detected_game = None
                     if command[1] == "language":
                         # Langue changée : textes recalculés et panneau reconstruit tout de suite
                         print(f"[main] Langue de l'interface : {i18n.set_language(app_cfg['language'])}")
@@ -813,6 +848,7 @@ def main() -> None:
                                                            "Eyetrack pour rouvrir le panneau ; clic droit pour quitter."))
                 elif action == "save":
                     save_profile(current_profile)
+                    game_map = game_profile_map()  # liste des jeux d'un profil modifiée à la main
                     print(f"[profile] Configuration sauvegardée dans 'profiles/{current_profile.name}.json'.")
             if quit_requested:
                 print("[main] Arrêt demandé par l'utilisateur.")

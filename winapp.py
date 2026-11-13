@@ -198,27 +198,31 @@ class PROCESSENTRY32W(ctypes.Structure):
                 ("szExeFile", ctypes.c_wchar * 260)]
 
 
-def is_process_running(exe_name: str) -> bool:
-    """Vrai si un processus de ce nom (ex. « opentrack.exe ») tourne, sans ouvrir de console."""
+def running_processes() -> set[str]:
+    """Noms (en minuscules) des programmes lancés, ex. « opentrack.exe », sans ouvrir de console."""
+    names: set[str] = set()
     if not IS_WINDOWS:
-        return False
+        return names
     k = ctypes.windll.kernel32
     k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
     snap = k.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if not snap or snap == INVALID_HANDLE_VALUE:
-        return False
+        return names
     try:
         entry = PROCESSENTRY32W()
         entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
         ok = k.Process32FirstW(wintypes.HANDLE(snap), ctypes.byref(entry))
-        target = exe_name.lower()
         while ok:
-            if entry.szExeFile.lower() == target:
-                return True
+            names.add(entry.szExeFile.lower())
             ok = k.Process32NextW(wintypes.HANDLE(snap), ctypes.byref(entry))
     finally:
         k.CloseHandle(wintypes.HANDLE(snap))
-    return False
+    return names
+
+
+def is_process_running(exe_name: str) -> bool:
+    """Vrai si un processus de ce nom (ex. « opentrack.exe ») tourne."""
+    return exe_name.lower() in running_processes()
 
 
 def find_opentrack(custom_path: str = "") -> str | None:

@@ -45,6 +45,7 @@ CHECKS = [
 # Réglages de l'application (app_settings.py, pas les profils) : envoyés en ("app", clé, valeur)
 APP_CHECKS = [
     ("launch_opentrack", "Ouvrir OpenTrack au lancement d'Eyetrack"),
+    ("auto_profile", "Changer de profil selon le jeu lancé (ETS2, BeamNG…)"),
 ]
 PANEL_FIELDS = [f for f, *_ in ESSENTIAL_SLIDERS + ADVANCED_SLIDERS] + [f for f, _ in CHECKS]
 
@@ -107,6 +108,7 @@ class ControlPanel:
         self._shown_app: dict | None = None
         self._buttons: dict[str, ttk.Button] = {}
         self._profile_box: ttk.Combobox | None = None
+        self._auto_label: tk.Label | None = None
         self._hint: tk.Label | None = None
         self._shown_version = -1
         self._shown_profiles: tuple = ()
@@ -189,6 +191,7 @@ class ControlPanel:
             self._language_box = None
             self._buttons.clear()
             self._profile_box = None
+            self._auto_label = None
             self._hint = None
             self._preview_box = None
             self._preview_label = None
@@ -272,6 +275,8 @@ class ControlPanel:
         box.grid(row=0, column=0, padx=6, pady=4)
         box.bind("<<ComboboxSelected>>", lambda _e: self._send("profile", box.get()))
         self._profile_box = box
+        self._auto_label = tk.Label(pf, text="", fg=GREY, anchor="w")
+        self._auto_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=6)
         ttk.Button(pf, text=tr("Sauvegarder les réglages"), command=lambda: self._send("action", "save")).grid(
             row=0, column=1, padx=6, pady=4)
 
@@ -477,6 +482,15 @@ class ControlPanel:
         self._buttons["pause"].config(text=tr("Reprendre") if s.get("paused") else tr("Pause"))
         self._buttons["gaze"].config(text=tr("Réactiver le regard") if not s.get("gaze_enabled") else tr("Couper le regard"))
         self._buttons["overlay"].config(text=tr("Masquer l'overlay") if s.get("overlay") else tr("Afficher l'overlay"))
+        game = s.get("auto_game", "")
+        if not game:
+            auto = ("", GREY)
+        elif s.get("profile_name") == s.get("auto_game_profile"):
+            auto = (tr("{game} détecté : profil choisi automatiquement", game=game), GREEN)
+        else:
+            auto = (tr("{game} détecté : profil choisi à la main", game=game), GREY)
+        if (self._auto_label.cget("text"), self._auto_label.cget("fg")) != auto:
+            self._auto_label.config(text=auto[0], fg=auto[1])
         hint = s.get("hotkey_hint", "")
         if self._hint.cget("text") != hint:
             self._hint.config(text=hint)

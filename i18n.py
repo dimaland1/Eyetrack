@@ -32,6 +32,13 @@ EN: dict[str, str] = {
     "Recalibrer le regard sur les clics (bureau, curseur visible)":
         "Refine the gaze calibration on clicks (desktop, visible cursor)",
     "Ouvrir OpenTrack au lancement d'Eyetrack": "Open OpenTrack when Eyetrack starts",
+    "Changer de profil selon le jeu lancé (ETS2, BeamNG…)": "Switch profile to match the running game (ETS2, BeamNG…)",
+    "{game} détecté : profil choisi automatiquement": "{game} detected: profile chosen automatically",
+    "{game} détecté : profil choisi à la main": "{game} detected: profile chosen by hand",
+    "Profil « {profile} » chargé": "Profile \"{profile}\" loaded",
+    "{game} détecté.": "{game} detected.",
+    "Profil « {profile} » rétabli": "Profile \"{profile}\" restored",
+    "{game} fermé.": "{game} closed.",
     "Langue / Language": "Language / Langue",
     "Auto (langue de Windows)": "Auto (Windows language)",
     # ------------------------------------------------------------------ panneau : cadres et boutons

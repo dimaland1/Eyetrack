@@ -53,6 +53,12 @@ reste en place.
 - **Langue** : français ou anglais (panneau, icône, écrans de calibration, messages d'erreur).
   Par défaut, celle de Windows ; à changer dans « Réglages avancés » → « Langue / Language »
   (appliqué tout de suite). Le journal `eyetrack.log` reste en français.
+- **Profil selon le jeu** : quand ETS2 / ATS, BeamNG.drive, Assetto Corsa, iRacing, MSFS, X-Plane
+  ou DCS est lancé, Eyetrack charge son profil (`ets2`, `beamng`, `racing`, `flight_sim`) en
+  1 à 2 s, avec une notification, puis revient au profil d'avant à la fermeture du jeu. Un
+  profil changé à la main pendant le jeu est respecté. Le profil habituel (repris au lancement)
+  ne change pas. Case « Changer de profil selon le jeu lancé » dans « Réglages avancés ».
+  Autres jeux : ajouter `"game_processes": ["MonJeu.exe"]` au JSON du profil (`[]` = jamais).
 - **Déjà lancé ?** Un nouveau double-clic rouvre simplement le panneau (une seule instance : la
   caméra et le port d'OpenTrack ne se partagent pas).
 - **Erreurs** (caméra introuvable ou occupée…) : affichées dans une fenêtre. Journal du dernier
@@ -183,7 +189,7 @@ lissage peut être réduit si la caméra paraît en retard.
 
 La recalibration sur les clics n'apprend que les clics faits curseur **visible** : en jeu, quand
 la souris est capturée (curseur caché), les clics sont ignorés. Elle est de plus coupée dans les
-profils de jeu (`ets2`, `flight_sim`, `racing`).
+profils de jeu (`ets2`, `beamng`, `flight_sim`, `racing`).
 
 ## Structure
 
@@ -271,8 +277,8 @@ Fait :
 - pour diffuser : profil OpenTrack fourni (entrée UDP, Accela, axes réglés), signature de
   l'exécutable (SmartScreen), fichier LICENSE ; avant toute vente, un modèle de regard sous
   licence libre (piste du dossier `docs/these/`, scénario B) ;
-- bonus : changement de profil automatique selon le jeu, courbes de réponse de la tête, presets
-  par jeu liant profil tracker et profil OpenTrack.
+- bonus : courbes de réponse de la tête, presets par jeu liant profil tracker et profil
+  OpenTrack (le profil automatique selon le jeu est fait).
 
 ## Licences
 

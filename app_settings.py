@@ -3,7 +3,8 @@
 - last_profile     : profil repris au lancement par double-clic sur Eyetrack.exe ;
 - launch_opentrack : ouvrir OpenTrack en même temps qu'Eyetrack (s'il n'est pas déjà ouvert) ;
 - opentrack_path   : chemin d'opentrack.exe si l'installation n'est pas à l'emplacement habituel ;
-- language         : langue de l'interface, "auto" (celle de Windows), "fr" ou "en" (cf. i18n.py).
+- language         : langue de l'interface, "auto" (celle de Windows), "fr" ou "en" (cf. i18n.py) ;
+- auto_profile     : charger le profil du jeu lancé (ETS2, BeamNG…), puis revenir au précédent.
 
 Stockés dans data/app_settings.json. Un fichier absent ou abîmé redonne les valeurs par défaut.
 """
@@ -15,7 +16,8 @@ import os
 from paths import data_path
 
 FILE_NAME = "app_settings.json"
-DEFAULTS: dict = {"last_profile": "default", "launch_opentrack": True, "opentrack_path": "", "language": "auto"}
+DEFAULTS: dict = {"last_profile": "default", "launch_opentrack": True, "opentrack_path": "", "language": "auto",
+                  "auto_profile": True}
 
 
 def load() -> dict:

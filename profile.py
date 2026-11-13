@@ -85,6 +85,10 @@ class Profile:
     hotkey_gaze: str = "ctrl+shift+f10"
     hotkey_pause: str = "ctrl+shift+f11"
 
+    # Changement de profil automatique : exécutables des jeux qui activent ce profil (sans casse).
+    # null (absent) = liste d'Eyetrack (GAME_PROCESSES) ; [] = jamais automatiquement.
+    game_processes: list[str] | None = None
+
     def to_dict(self) -> dict:
         """Sérialise le profil en dictionnaire JSON-compatible."""
         return asdict(self)
@@ -201,6 +205,24 @@ def create_builtin_profile(name: str) -> Profile:
             gaze_min_cutoff=0.45,
             gaze_beta=0.0005,
         )
+    elif "beamng" in lower:
+        return Profile(
+            name="beamng",
+            recalib_on_click=False,
+            description="BeamNG.drive : conduite, regard horizontal pour les virages, pas de dérive verticale",
+            gaze_mode="net",
+            gaze_yaw_gain=0.75,
+            gaze_pitch_gain=0.25,
+            gaze_deadzone=0.12,
+            gaze_curve_exp=1.3,
+            gaze_smoothing_s=0.25,
+            head_yaw_gain=2.0,
+            head_pitch_gain=1.2,
+            pose_min_cutoff=1.2,
+            pose_beta=0.18,
+            gaze_min_cutoff=0.4,
+            gaze_beta=0.0005,
+        )
     elif "race" in lower or "racing" in lower or "assetto" in lower or "iracing" in lower:
         return Profile(
             name="racing",
@@ -241,8 +263,92 @@ def create_builtin_profile(name: str) -> Profile:
 def initialize_all_default_profiles() -> None:
     """Génère tous les profils de référence si le répertoire est vide ou incomplet."""
     ensure_profiles_dir()
-    for name in ["default", "ets2", "flight_sim", "racing"]:
+    for name in ["default", "ets2", "beamng", "flight_sim", "racing"]:
         path = os.path.join(PROFILES_DIR, f"{name}.json")
         if not os.path.exists(path):
             p = create_builtin_profile(name)
             save_profile(p, path)
+
+
+# --------------------------------------------------------------------------- profil selon le jeu
+# Exécutables des jeux reconnus, par profil (vérifiés sur une installation Steam : eurotrucks2.exe,
+# BeamNG.drive.x64.exe ; les autres d'après leur nom habituel). Un profil peut définir sa propre
+# liste dans son JSON (« game_processes »).
+GAME_PROCESSES: dict[str, list[str]] = {
+    "ets2": ["eurotrucks2.exe", "amtrucks.exe"],
+    "beamng": ["BeamNG.drive.x64.exe", "BeamNG.drive.exe"],
+    "racing": ["acs.exe", "AC2-Win64-Shipping.exe", "iRacingSim64DX11.exe"],
+    "flight_sim": ["FlightSimulator.exe", "FlightSimulator2024.exe", "X-Plane.exe", "DCS.exe"],
+}
+GAME_NAMES: dict[str, str] = {
+    "eurotrucks2.exe": "Euro Truck Simulator 2", "amtrucks.exe": "American Truck Simulator",
+    "beamng.drive.x64.exe": "BeamNG.drive", "beamng.drive.exe": "BeamNG.drive",
+    "acs.exe": "Assetto Corsa", "ac2-win64-shipping.exe": "Assetto Corsa Competizione",
+    "iracingsim64dx11.exe": "iRacing", "flightsimulator.exe": "Microsoft Flight Simulator",
+    "flightsimulator2024.exe": "Microsoft Flight Simulator 2024", "x-plane.exe": "X-Plane",
+    "dcs.exe": "DCS World",
+}
+
+
+def game_processes_of(profile: Profile) -> list[str]:
+    """Exécutables (en minuscules) qui activent ce profil."""
+    procs = profile.game_processes if profile.game_processes is not None else GAME_PROCESSES.get(profile.name, [])
+    return [p.strip().lower() for p in procs if isinstance(p, str) and p.strip()]
+
+
+def game_profile_map() -> dict[str, list[str]]:
+    """Profil -> exécutables de jeu, pour les profils présents qui en ont."""
+    out: dict[str, list[str]] = {}
+    for name in list_profiles():
+        try:
+            procs = game_processes_of(load_profile(name))
+        except Exception:
+            continue
+        if procs:
+            out[name] = procs
+    return out
+
+
+def detect_game(running: set[str], mapping: dict[str, list[str]]) -> tuple[str, str] | None:
+    """(profil, exécutable) du premier jeu reconnu parmi les processus lancés (noms en minuscules)."""
+    for name in sorted(mapping):
+        for exe in mapping[name]:
+            if exe in running:
+                return name, exe
+    return None
+
+
+def game_name(exe: str) -> str:
+    return GAME_NAMES.get(exe.lower(), exe)
+
+
+class AutoProfile:
+    """Choisit le profil du jeu lancé, puis revient au profil d'avant quand le jeu se ferme.
+
+    Un changement de profil fait à la main pendant le jeu est respecté : rien n'est imposé, et
+    le profil choisi reste en place à la fermeture du jeu.
+    """
+
+    def __init__(self) -> None:
+        self.game: str | None = None          # exécutable du jeu détecté
+        self.game_profile: str | None = None  # profil chargé pour lui
+        self.previous: str | None = None      # profil d'avant le jeu
+        self.manual = False                   # profil changé à la main pendant le jeu
+
+    def update(self, detected: tuple[str, str] | None, current: str) -> str | None:
+        """Profil à charger maintenant (ou None) d'après le jeu détecté et le profil actif."""
+        if detected is None:
+            if self.game is None:
+                return None
+            previous, manual = self.previous, self.manual
+            self.__init__()
+            return None if manual or previous is None or previous == current else previous
+        profile, exe = detected
+        if exe == self.game:
+            if current != self.game_profile:
+                self.manual = True
+            return None
+        if self.game is None:
+            self.previous = current
+        self.game, self.game_profile, self.manual = exe, profile, False
+        return profile if profile != current else None

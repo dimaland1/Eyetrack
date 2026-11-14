@@ -226,7 +226,8 @@ research/           pipeline expérimental (collecte solo, modèles personnels e
                     évaluations) : hors du tracker, voir docs/these/
 assets/             icône de l'application (eyetrack.ico)
 tests/              tests automatiques (axes, envoi OpenTrack, capture, calibration, langue, modèle…)
-docs/               état de l'art de l'eye tracking webcam ; docs/these/ : dossier scientifique
+docs/               site du projet (index.html, publié par GitHub Pages depuis docs/) ; état de l'art
+                    de l'eye tracking webcam ; docs/these/ : dossier scientifique
 models/             modèles téléchargés (hors git)
 data/               calibrations, cache caméra, sorties de diagnostic (hors git)
 ```

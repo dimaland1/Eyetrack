@@ -17,8 +17,13 @@ Le programme installé est indépendant du dossier des sources : on peut continu
 
 from __future__ import annotations
 import argparse
+import ast
+import base64
+import hashlib
+import importlib.metadata as metadata
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +38,8 @@ LOCAL = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local"
 APP_DIR = LOCAL / "Programs" / "Eyetrack"
 USER_DIR = LOCAL / "Eyetrack"
 DIST_DIR = ROOT / "dist" / "Eyetrack"
+BUILD_DIR = ROOT / "build" / "eyetrack"  # listes de PyInstaller (PYZ-00.toc, Analysis-00.toc)
+REPO_URL = "https://github.com/dimaland1/Eyetrack"
 MODELS = ["face_landmarker.task"]  # fournis dans le paquet (Apache 2.0)
 # Modèle de regard de précision : licence non commerciale d'un tiers, jamais dans le paquet ni
 # l'installeur. Sert seulement à l'auto-test, et copié pour l'utilisateur de CE PC (sa copie).
@@ -70,8 +77,125 @@ def build() -> None:
         sys.exit("Échec de PyInstaller (voir les messages ci-dessus).")
     if not (DIST_DIR / "Eyetrack.exe").is_file():
         sys.exit(f"Eyetrack.exe introuvable dans {DIST_DIR}.")
+    count = write_licenses(DIST_DIR, BUILD_DIR, git("rev-parse", "HEAD") or "main")
+    print(f"Licences : LICENSE.txt, THIRD_PARTY_NOTICES.txt et {count} composants dans licenses/")
     size = sum(f.stat().st_size for f in DIST_DIR.rglob("*") if f.is_file()) / 1e6
     print(f"Construit : {DIST_DIR / 'Eyetrack.exe'} ({size:.0f} Mo au total)")
+
+
+# --- Licences livrées avec l'exécutable (GPL-3.0 + textes des bibliothèques embarquées) ---
+
+_LICENSE_NAME = re.compile(r"^(LICEN[CS]E|COPYING|NOTICE|AUTHORS|ThirdPartyNotices)", re.IGNORECASE)
+# Mentions de copyright rangées ailleurs que dans un fichier LICENSE
+_EXTRA_NOTICES = {"sounddevice": ["_sounddevice_data/portaudio-binaries/README.md"]}  # PortAudio (MIT)
+
+
+def _owns_files(dist: metadata.Distribution, top: str) -> bool:
+    """Vrai si les fichiers .py de `top` sur le disque sont bien ceux de cette distribution.
+
+    Deux distributions peuvent fournir le même module (opencv-python et opencv-contrib-python
+    pour cv2) : la dernière installée a écrasé l'autre, c'est elle qui est embarquée.
+    """
+    checked = 0
+    for f in dist.files or []:
+        if f.parts[0] != top or f.suffix != ".py" or f.hash is None:
+            continue
+        path = Path(dist.locate_file(f))
+        if not path.is_file():
+            return False
+        digest = base64.urlsafe_b64encode(hashlib.new(f.hash.mode, path.read_bytes()).digest()).rstrip(b"=")
+        if digest.decode() != f.hash.value:
+            return False
+        checked += 1
+    return checked > 0
+
+
+def bundled_distributions(build_dir: Path) -> dict[str, metadata.Distribution]:
+    """Distributions Python réellement embarquées, d'après les listes de PyInstaller."""
+    names: set[str] = set()
+    pyz = ast.literal_eval((build_dir / "PYZ-00.toc").read_text(encoding="utf-8"))
+    names.update(entry[0].split(".")[0] for entry in pyz[1])
+    for part in ast.literal_eval((build_dir / "Analysis-00.toc").read_text(encoding="utf-8")):
+        if not isinstance(part, list):
+            continue
+        for entry in part:  # binaires et données : (destination, source, type)
+            if isinstance(entry, tuple) and len(entry) == 3 and isinstance(entry[0], str):
+                segments = re.split(r"[\\/]", entry[0])
+                names.add(segments[0].split(".")[0])  # mediapipe/..., cv2/..., _cffi_backend.pyd
+                if entry[2] == "EXTENSION":  # win32/win32api.pyd -> win32api (pywin32)
+                    names.add(segments[-1].split(".")[0])
+    owners = metadata.packages_distributions()
+    found: dict[str, metadata.Distribution] = {}
+    for name in names:
+        candidates = [metadata.distribution(d) for d in dict.fromkeys(owners.get(name, []))]
+        if len(candidates) > 1:
+            candidates = [d for d in candidates if _owns_files(d, name)] or candidates
+        for dist in candidates:
+            found[dist.metadata["Name"]] = dist
+    return dict(sorted(found.items(), key=lambda item: item[0].lower()))
+
+
+def _license_label(dist: metadata.Distribution) -> str:
+    meta = dist.metadata
+    if meta.get("License-Expression"):
+        return meta["License-Expression"]
+    text = (meta.get("License") or "").strip()
+    if text and "\n" not in text and len(text) <= 40:
+        return text
+    classifiers = [c.split("::")[-1].strip() for c in meta.get_all("Classifier") or [] if c.startswith("License ::")]
+    return ", ".join(classifiers) or "voir les fichiers"
+
+
+def write_licenses(dist_dir: Path, build_dir: Path, commit: str) -> int:
+    """Copie LICENSE (GPL-3.0) et les licences des composants embarqués à côté d'Eyetrack.exe.
+
+    Écrit THIRD_PARTY_NOTICES.txt (liste exacte, versions comprises) et licenses/<composant>/.
+    Renvoie le nombre de composants.
+    """
+    shutil.copy2(ROOT / "LICENSE", dist_dir / "LICENSE.txt")
+    out = dist_dir / "licenses"
+    shutil.rmtree(out, ignore_errors=True)
+    rows = []
+    python_license = Path(sys.base_prefix) / "LICENSE.txt"
+    if python_license.is_file():
+        folder = out / f"Python-{sys.version.split()[0]}"
+        folder.mkdir(parents=True)
+        shutil.copy2(python_license, folder / "LICENSE.txt")
+        rows.append((f"Python {sys.version.split()[0]}", "PSF-2.0 (with its bundled libraries)", folder.name))
+    for name, dist in bundled_distributions(build_dir).items():
+        folder = out / f"{name}-{dist.version}"
+        copied = 0
+        extra = _EXTRA_NOTICES.get(name, [])
+        for f in dist.files or []:
+            if f.as_posix() not in extra and (not _LICENSE_NAME.search(f.name) or f.suffix in (".py", ".pyc", ".pyi")):
+                continue
+            src = Path(dist.locate_file(f))
+            if not src.is_file():
+                continue
+            # Sans le dossier .dist-info : numpy-1.26.4.dist-info/LICENSE.txt -> LICENSE.txt
+            parts = [p for p in f.parts if not p.endswith(".dist-info") and p != "licenses"]
+            dst = folder.joinpath(*parts)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            copied += 1
+        rows.append((f"{name} {dist.version}", _license_label(dist), folder.name if copied else ""))
+    width = max(len(r[0]) for r in rows)
+    lines = [
+        "Eyetrack - third-party components included in this build",
+        "",
+        "Eyetrack is free software under the GNU General Public License v3 (LICENSE.txt).",
+        f"Source code of this build: {REPO_URL}/tree/{commit}",
+        "",
+        "Eyetrack.exe includes the components below. Their license texts are in the licenses folder.",
+        "The MediaPipe face landmark model (models/face_landmarker.task) is under Apache-2.0, like MediaPipe.",
+        "The optional precision gaze model is NOT included: users download it themselves from its",
+        "official source (yakhyo/gaze-estimation), under its own non-commercial license.",
+        "",
+    ]
+    lines += [f"{label.ljust(width)}  {lic}" + (f"  ->  licenses/{where}" if where else "  (no license file in the package)")
+              for label, lic, where in rows]
+    (dist_dir / "THIRD_PARTY_NOTICES.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return len(rows)
 
 
 def _close_windows_of(pid: int) -> list[str]:

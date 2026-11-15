@@ -38,9 +38,12 @@ a = Analysis(
               "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "gi", "cairo"],
     noarchive=False,
 )
-# FFmpeg d'OpenCV (~28 Mo chacun) : inutile, la webcam passe par DirectShow / Media Foundation
-a.binaries = [b for b in a.binaries if "opencv_videoio_ffmpeg" not in b[0]]
-a.datas = [d for d in a.datas if "opencv_videoio_ffmpeg" not in d[0]]
+# FFmpeg d'OpenCV (~28 Mo chacun) : inutile, la webcam passe par DirectShow / Media Foundation.
+# PortAudio avec ASIO (SDK Steinberg, licence à part) : Eyetrack ne fait pas d'audio ; sounddevice
+# ne le charge que si SD_ENABLE_ASIO est défini, la version sans ASIO reste.
+DROPPED = ("opencv_videoio_ffmpeg", "libportaudio64bit-asio")
+a.binaries = [b for b in a.binaries if not any(name in b[0] for name in DROPPED)]
+a.datas = [d for d in a.datas if not any(name in d[0] for name in DROPPED)]
 pyz = PYZ(a.pure)
 
 exe = EXE(

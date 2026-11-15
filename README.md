@@ -1,293 +1,248 @@
 # Eyetrack
 
-Suivi de la tête et du regard avec une simple webcam, envoyé à OpenTrack (protocole
-« UDP over network », port 4242) pour piloter la caméra dans les jeux et simulateurs.
+**English** · [Français](README.fr.md) · [Website](https://dimaland1.github.io/Eyetrack/)
 
-## Installation
+Free head and eye tracking with an ordinary webcam, for driving and flight simulators.
+
+Eyetrack follows your head (6 degrees of freedom) and where you look on the screen. It sends
+both to [OpenTrack](https://github.com/opentrack/opentrack) ("UDP over network", port 4242), so
+the in-game camera moves with you. You turn your head a little, the view turns a lot. You glance
+at a mirror, the view nudges toward it. It works with glasses.
+
+- **Download:** [Eyetrack-Setup.exe](https://github.com/dimaland1/Eyetrack/releases/latest)
+  (Windows 64-bit, no administrator rights needed)
+- **License:** [GPL-3.0](LICENSE), free software
+
+## Features
+
+- **6DoF head tracking** from 478 face landmarks (MediaPipe), with adjustable amplification:
+  20° of head rotation can become 50° in game.
+- **Gaze on top of head tracking.** Your gaze adds a calibrated nudge to the camera. A smoothing
+  filter and a dead zone keep the view calm while you read the dashboard.
+- **Works with glasses.** Eyetrack warns you when a reflection hides your eyes, and tells you
+  what to change.
+- **9-point calibration** with an honest score: each target is predicted without its own data.
+- **Per-game profiles.** Eyetrack switches profile automatically when you start Euro Truck
+  Simulator 2, American Truck Simulator, BeamNG.drive, Assetto Corsa, iRacing, MSFS, X-Plane
+  or DCS, and switches back when you quit.
+- **Smooth output:** the webcam gives 30 images per second, and Eyetrack sends 120 updates per
+  second to OpenTrack, with light prediction in between.
+- **Stays out of your way:** global hotkeys that work in game, a tray icon, and a control panel
+  in English or French.
+- **Private:** all processing happens on your PC. No account, no telemetry, no image ever leaves
+  your computer.
+
+## Install
+
+1. **Download and run** `Eyetrack-Setup.exe` from the
+   [latest release](https://github.com/dimaland1/Eyetrack/releases/latest). The installer is not
+   signed yet, so Windows SmartScreen may show "Windows protected your PC". Click **More info**,
+   then **Run anyway**.
+2. **The installer offers two optional extras:**
+   - **OpenTrack**, if it is not installed yet. It is installed with winget, and Windows asks for
+     permission.
+   - **The precision gaze model.** Its box is unticked by default. This model belongs to a
+     third party and its license only allows **non-commercial use**, so it is not part of
+     Eyetrack. If you tick the box, you accept that license, and the installer downloads the
+     model from its official source and checks its SHA-256 fingerprint. You can also get it
+     later from the control panel (**Precision model…**). Without it, Eyetrack runs in simple
+     mode, which uses the iris position only and is less precise.
+3. **Set up OpenTrack.** Set the input to **UDP over network**, port **4242**. Set the output to
+   the one your game supports, usually **freetrack 2.0 Enhanced**. The **Accela** filter is a
+   good start; lower its smoothing if the camera feels late.
+4. **Start Eyetrack.** On the first launch, a welcome screen explains the calibration and shows
+   the camera image. A green frame means your face is detected. Press `Enter` to calibrate, or
+   `Esc` to do it later.
+
+Uninstalling (Windows "Installed apps") keeps your calibration and settings, unless you ask to
+delete them.
+
+## Calibration
+
+Click **Calibrate gaze** in the control panel. Look at each of the 9 targets while gently moving
+your head. The targets sit 10% from the screen edges, so that your gaze is learned all the way to
+the corners. If a reflection covers your eyes, a red message appears: move the lamp or tilt the
+screen a little.
+
+At the end, a results screen shows where your gaze was estimated for each target, and the error
+in degrees. Each point is predicted **without its own data** (cross-validation), so the score is
+not flattering. Corners are naturally a bit less precise than the center.
+
+| Score | Mean error |
+|---|---|
+| **Good** | up to 5.5° |
+| **Fair** | up to 7° |
+| **Redo** | above 7° |
+
+| Key | Action |
+|---|---|
+| `Enter` | Accept the calibration |
+| `R` | Redo only the red points, or those taken with glare (otherwise the worst one) |
+| `Esc` | Cancel and keep the previous calibration |
+
+## Hotkeys
+
+These work even while the game has focus:
+
+| Keys | Action |
+|---|---|
+| `Ctrl`+`Shift`+`F9` | Recenter: your current head pose and gaze become the center |
+| `Ctrl`+`Shift`+`F10` | Turn the gaze influence on or off |
+| `Ctrl`+`Shift`+`F11` | Pause: the camera goes back to the center and stays there (same keys to resume) |
+
+You can change them in the profile (`hotkey_recenter`, `hotkey_gaze`, `hotkey_pause`), for
+example `"pause"`, `"scrolllock"` or `"ctrl+shift+f12"`; `""` disables one. Many games still
+see the keys. Avoid letters (in BeamNG, `R` resets the vehicle), and if `Ctrl` or `Shift`
+change gear in your game, pick a single key. Eyetrack tells you at startup if another program
+already uses a combination.
+
+## Control panel
+
+- **Status:** face detected or lost, blinks, glare on glasses, frames per second, updates sent to
+  OpenTrack, gaze on or off, calibration score.
+- **Commands:** recenter, pause, gaze on/off, calibrate, gaze overlay, show camera, open
+  OpenTrack, quit.
+- **Show camera:** a preview with the detected irises and a green, orange or red frame (tracked,
+  blink, lost). Useful to check framing, light and glare. It costs nothing when closed.
+- **Profile:** choose a profile and save your settings into it.
+- **Live settings:** head amplification, gaze share and gaze smoothing. More in
+  **Advanced settings**: up/down amplification, dead zone, language, auto profile switching, and
+  opening OpenTrack at startup. Changes apply at once, and are kept only when you click
+  **Save settings**.
+
+Closing the panel only hides it: tracking continues. Click the tray icon to reopen it.
+Right-click the icon to recenter, pause, toggle gaze or quit.
+
+## Profiles
+
+Profiles are JSON files: `default`, `ets2`, `beamng`, `racing` and `flight_sim`. The main
+settings are:
+
+| Key | Effect |
+|---|---|
+| `head_yaw_gain`, `head_pitch_gain` | Head rotation amplification (2.5 = 20° of head rotation gives 50° in game) |
+| `gaze_yaw_gain`, `gaze_pitch_gain` | Share of gaze in the camera rotation |
+| `gaze_smoothing_s` | Gaze smoothing (higher = calmer but slower camera) |
+| `gaze_deadzone` | Central zone where gaze barely acts |
+| `send_rate_hz` | Updates per second sent to OpenTrack (120; 0 = once per webcam image) |
+| `output_smoothing_s`, `prediction_s` | Short smoothing between images, and the prediction that makes up for its delay |
+| `recalib_on_click` | Gaze recalibration on mouse clicks (off in game profiles) |
+| `game_processes` | Games that load this profile automatically, e.g. `["MyGame.exe"]` (`[]` = never) |
+
+Tip: tune head tracking alone first (turn gaze off with `Ctrl`+`Shift`+`F10`), then add gaze
+with a moderate share.
+
+## Accuracy and limits
+
+- **Gaze accuracy:** about 3° on targets left out of the calibration, with a Logitech C920 at
+  720p and glasses. That is enough to look toward a mirror or a screen area. It is not enough to
+  aim at a small button.
+- **Light matters:** light your face evenly from the front, and avoid strong reflections on
+  glasses.
+- **A dedicated infrared tracker is more precise** and works in the dark. Eyetrack is the free
+  option for the webcam you already have.
+- **Windows only** for now.
+
+## Files
+
+- Program: `%LOCALAPPDATA%\Programs\Eyetrack`, replaced at each update.
+- Calibration, profiles and log: `%LOCALAPPDATA%\Eyetrack`. Updates never delete them. The log of
+  the last session is `eyetrack.log` (written in French).
+- Errors such as a missing or busy camera are shown in a window.
+
+## Run from source
+
+Eyetrack is developed with Python 3.12 on Windows.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Le modèle du visage (MediaPipe, `models/`) est téléchargé automatiquement au premier lancement.
-Le **modèle de regard de précision** (licence non commerciale d'un tiers) ne l'est jamais sans
-accord : bouton « Modèle de précision… » du panneau (sans lui, Eyetrack tourne en mode simple).
-OpenTrack s'installe depuis le menu (option 8) ou avec
-`winget install --id opentrack.opentrack -e`.
-
-### Installeur à donner : `Eyetrack-Setup.exe`
-
-Option **I** du menu `Eyetrack.bat` (ou `python tools/build_exe.py --installer`) : construit
-l'exécutable, le soumet à l'auto-test puis compile `dist\installer\Eyetrack-Setup.exe` avec
-[Inno Setup 6](https://jrsoftware.org/isinfo.php) (gratuit ; `winget install --id
-JRSoftware.InnoSetup -e --scope user`). Script : `installer/eyetrack.iss`. L'installeur :
-
-- s'installe pour l'utilisateur, **sans droits administrateur**, en français ou en anglais (la
-  langue choisie devient celle d'Eyetrack) ; raccourcis menu Démarrer et Bureau ;
-- propose **OpenTrack** s'il n'est pas installé (winget ; Windows demande alors une autorisation) ;
-- propose le **modèle de regard de précision**, case décochée : il n'est **pas inclus** (licence
-  non commerciale d'un tiers) ; en cochant, l'utilisateur accepte sa licence et l'installeur le
-  télécharge depuis sa source officielle, empreinte SHA-256 vérifiée. Installation silencieuse :
-  `/VERYSILENT /DOWNLOADMODEL=1` ;
-- refuse de s'installer pendant qu'Eyetrack tourne ; la désinstallation (« Applications
-  installées ») garde la calibration et les réglages, sauf si l'utilisateur demande de les effacer.
-
-## Lancement
-
-### Pour jouer : `Eyetrack` sur le Bureau (sans terminal)
-
-`Eyetrack.exe` s'ouvre directement sur le panneau de contrôle, sans fenêtre de terminal. On le
-construit et l'installe une fois (puis après chaque mise à jour du code) avec l'**option E** du
-menu `Eyetrack.bat`, ou `python tools/build_exe.py` ; il faut quitter Eyetrack avant. Avant
-d'installer, l'exécutable construit passe un **auto-test** (`Eyetrack.exe --self-test` : modèles,
-MediaPipe, interface, sans caméra) ; s'il échoue, rien n'est installé et la version précédente
-reste en place.
-
-- **Double-clic** : reprend le dernier profil utilisé, ouvre OpenTrack s'il n'est pas déjà
-  ouvert (case « Ouvrir OpenTrack au lancement d'Eyetrack » dans « Réglages avancés »), puis
-  démarre le suivi avec le panneau et l'icône près de l'horloge.
-- **Premier lancement** (pas encore de calibration) : un écran d'accueil s'ouvre tout seul,
-  explique la calibration et montre l'image de la caméra (cadre vert = visage détecté).
-  `Entrée` lance la calibration, `Échap` la remet à plus tard (bouton « Calibrer le regard » du
-  panneau) ; elle est reproposée au lancement suivant tant qu'il n'y a pas de calibration.
-- **Langue** : français ou anglais (panneau, icône, écrans de calibration, messages d'erreur).
-  Par défaut, celle de Windows ; à changer dans « Réglages avancés » → « Langue / Language »
-  (appliqué tout de suite). Le journal `eyetrack.log` reste en français.
-- **Profil selon le jeu** : quand ETS2 / ATS, BeamNG.drive, Assetto Corsa, iRacing, MSFS, X-Plane
-  ou DCS est lancé, Eyetrack charge son profil (`ets2`, `beamng`, `racing`, `flight_sim`) en
-  1 à 2 s, avec une notification, puis revient au profil d'avant à la fermeture du jeu. Un
-  profil changé à la main pendant le jeu est respecté. Le profil habituel (repris au lancement)
-  ne change pas. Case « Changer de profil selon le jeu lancé » dans « Réglages avancés ».
-  Autres jeux : ajouter `"game_processes": ["MonJeu.exe"]` au JSON du profil (`[]` = jamais).
-- **Déjà lancé ?** Un nouveau double-clic rouvre simplement le panneau (une seule instance : la
-  caméra et le port d'OpenTrack ne se partagent pas).
-- **Erreurs** (caméra introuvable ou occupée…) : affichées dans une fenêtre. Journal du dernier
-  lancement : `%LOCALAPPDATA%\Eyetrack\eyetrack.log` (le précédent : `eyetrack.old.log`).
-- **Où sont les fichiers ?** Le programme est dans `%LOCALAPPDATA%\Programs\Eyetrack`
-  (remplacé à chaque mise à jour). La calibration et les profils de l'exécutable sont dans
-  `%LOCALAPPDATA%\Eyetrack`, et une mise à jour ne les efface jamais. Ils sont séparés de ceux des
-  sources : on peut essayer une version en développement sans toucher à la calibration du jeu.
-  À la première installation, la calibration et les profils des sources y sont repris.
-- L'exécutable n'est pas signé : au premier lancement, Windows SmartScreen peut afficher
-  « Windows a protégé votre ordinateur » → « Informations complémentaires » → « Exécuter quand
-  même ».
-
-### Pour développer : `Eyetrack.bat` ou la ligne de commande
-
-Double-cliquer sur **`Eyetrack.bat`** et choisir dans le menu, ou en ligne de commande :
-
 ```bash
 python main.py --gaze-mode net --profile default
 ```
 
-Au premier lancement, la recherche du meilleur mode caméra prend ~20 s ; il est ensuite
-mémorisé dans `data/camera_mode.json` (supprimer ce fichier pour relancer la recherche).
+The MediaPipe face model is downloaded on the first run. The precision gaze model is never
+downloaded without your consent: use **Precision model…** in the control panel. On the first
+run, finding the best camera mode takes about 20 seconds; the result is saved in
+`data/camera_mode.json`. Delete that file to search again.
 
-### Panneau de contrôle
+`Eyetrack.bat` opens a menu (in French) with the tracker, the diagnostics, the tests and the
+builds. `python main.py --moniteur` also opens the diagnostic window, with an enlarged video and
+a detailed overlay.
 
-Une fenêtre « Eyetrack - Panneau de contrôle » s'ouvre avec le tracker :
+### Build the executable and the installer
 
-- **État** : visage détecté / perdu / clignement, reflets sur les lunettes, images par seconde,
-  envois à OpenTrack et plus long trou, regard actif ou coupé, note de la calibration, pause ;
-- **Commandes** : recentrer, pause, regard on/off, calibrer, overlay, voir la caméra, ouvrir
-  OpenTrack (la ligne « OpenTrack » de l'état passe en orange quand il est fermé), quitter ;
-- **Caméra** (bouton « Voir la caméra », fermé par défaut) : aperçu de l'image avec les iris
-  détectés (points jaunes), un cadre vert / orange / rouge (visage suivi / clignement / perdu),
-  le temps de calcul et l'agitation. Utile pour régler le cadrage, la lumière et vérifier les
-  reflets des lunettes ; en jeu, le laisser fermé (il ne coûte alors rien) ;
-- **Profil** : changer de profil et sauvegarder les réglages dans son fichier JSON ;
-- **Réglages en direct** : les trois essentiels (amplification de la tête, part du regard,
-  lissage du regard) ; le reste dans « Réglages avancés » (amplification haut/bas, lissage de la
-  tête au repos, part du regard haut/bas, zone morte, recalibration sur les clics). Les
-  changements s'appliquent tout de suite ; ils ne sont gardés que si l'on clique sur
-  « Sauvegarder les réglages ».
-
-**Zone de notification** : une icône Eyetrack s'affiche près de l'horloge. La croix du panneau
-le **réduit** (le suivi continue) ; un clic sur l'icône le rouvre ; clic droit : menu (recentrer,
-pause, regard, quitter). Pour arrêter le tracker : bouton « Quitter » ou menu de l'icône.
-
-L'ancienne fenêtre « Moniteur » (vidéo agrandie et HUD
-de diagnostic complet) ne s'ouvre plus que sur demande : `python main.py --moniteur`, ou sans
-panneau : `python main.py --no-panel`.
-
-### Calibration guidée
-
-Bouton « Calibrer le regard » (ou `C` dans le Moniteur) : 9 cibles, à 10 % des bords de l'écran
-pour que le regard soit appris jusque dans les coins. Fixer chaque cible en bougeant doucement la
-tête. Si un reflet couvre les iris, un message rouge s'affiche : déplacer la lampe ou incliner un
-peu l'écran. L'écran de calibration passe au-dessus de toutes les fenêtres (jeu, navigateur,
-panneau) et prend le clavier, même lancé par un raccourci pendant le jeu.
-
-À la fin, un écran de résultats montre, pour chaque cible, où le regard a été estimé (croix) et
-l'erreur en degrés. Chaque point est prédit **sans lui** (validation croisée) : la note ne flatte
-pas la calibration. Note globale : **bonne** jusqu'à 5,5°, **moyenne** jusqu'à 7°, **à refaire**
-au-delà (seuils calés sur de vraies calibrations avec lunettes : 3,9° et 4,8° ; un point raté donne
-18 à 38°). Les coins sont naturellement un peu moins bons que le centre.
-
-| Touche | Action |
-|---|---|
-| `Entrée` | Valider la calibration |
-| `R` | Refaire seulement les points en rouge ou pris avec un reflet (sinon le moins bon) |
-| `Échap` | Annuler : l'ancienne calibration est conservée |
-
-La note est enregistrée avec la calibration et affichée dans le panneau.
-
-### Raccourcis en jeu (globaux)
-
-Ils marchent même quand le jeu a le focus :
-
-| Touches | Action |
-|---|---|
-| `Ctrl`+`Maj`+`F9` | Recentrer (pose et regard actuels = zéro, en douceur) |
-| `Ctrl`+`Maj`+`F10` | Activer / couper l'influence du regard sur la caméra |
-| `Ctrl`+`Maj`+`F11` | Pause : la caméra revient au centre et y reste (même touche pour reprendre) |
-
-Les combinaisons se changent dans le profil (`hotkey_recenter`, `hotkey_gaze`, `hotkey_pause`,
-ex. `"pause"`, `"scrolllock"`, `"ctrl+shift+f12"`, `""` pour désactiver). Beaucoup de jeux voient
-quand même les touches : éviter les lettres (dans BeamNG, `R` réinitialise le véhicule) et, si
-`Ctrl`/`Maj` passent les vitesses (boîte au clavier dans ETS2), prendre une touche seule.
-Si une combinaison est déjà prise par un autre programme, le tracker l'indique au démarrage.
-
-### Raccourcis de la fenêtre « Eyetrack - Moniteur » (avec `--moniteur`)
-
-| Touche | Action |
-|---|---|
-| `C` | Calibrer le regard (9 points) |
-| `G` | Activer / couper l'influence du regard sur la caméra |
-| `R` | Recentrer |
-| `Espace` | Pause / reprise |
-| `P` | Profil suivant (`default`, `ets2`, `flight_sim`, `racing`) |
-| `S` | Sauvegarder le profil actif |
-| `O` | Overlay transparent du point de regard |
-| `Q` / `Échap` | Quitter |
-
-Conseil : régler d'abord la tête seule (`G` pour couper le regard) dans OpenTrack, puis
-ajouter le regard avec un gain modéré.
-
-Réglages principaux d'un profil (`profiles/*.json`) :
-
-| Clé | Effet |
-|---|---|
-| `head_yaw_gain`, `head_pitch_gain` | Amplification de la rotation de la tête (2,5 = 20° de tête -> 50° en jeu) |
-| `gaze_yaw_gain`, `gaze_pitch_gain` | Part du regard dans la rotation de la caméra |
-| `gaze_smoothing_s` | Lissage de la part regard (plus grand = caméra plus calme, plus lente) |
-| `gaze_deadzone` | Zone centrale où le regard n'agit presque pas |
-| `send_rate_hz` | Fréquence d'envoi à OpenTrack (120 ; 0 = une fois par image webcam) |
-| `output_smoothing_s`, `prediction_s` | Lissage court entre deux images et prédiction qui en rattrape le retard |
-| `recalib_on_click` | Recalibration du regard sur les clics de souris (coupée dans les profils de jeu) |
-| `hotkey_recenter`, `hotkey_gaze`, `hotkey_pause` | Raccourcis globaux |
-
-Les clignements sont détectés : le regard est figé pendant un clignement.
-
-### Fluidité et OpenTrack
-
-La webcam donne 30 images par seconde, mais le tracker envoie à OpenTrack **120 fois par
-seconde** : entre deux images, la pose est lissée et légèrement prédite, la caméra du jeu avance
-donc par petits pas réguliers. Le panneau affiche la fréquence réelle et le plus long trou entre deux
-envois (normalement 8 à 15 ms). Le filtre Accela d'OpenTrack reste conseillé ; son
-lissage peut être réduit si la caméra paraît en retard.
-
-La recalibration sur les clics n'apprend que les clics faits curseur **visible** : en jeu, quand
-la souris est capturée (curseur caché), les clics sont ignorés. Elle est de plus coupée dans les
-profils de jeu (`ets2`, `beamng`, `flight_sim`, `racing`).
-
-## Structure
-
-```
-Eyetrack.bat        lanceur (menu)
-main.py             point d'entrée : boucle capture -> visage -> regard -> filtres -> OpenTrack
-eyetrack_app.py     point d'entrée d'Eyetrack.exe (dernier profil, OpenTrack, instance unique, erreurs)
-eyetrack.spec       recette PyInstaller de l'exécutable (utilisée par tools/build_exe.py)
-paths.py            chemins (sources : models/, data/, profiles/ ; exécutable : %LOCALAPPDATA%)
-app_settings.py     réglages de l'application (dernier profil, ouverture d'OpenTrack, langue)
-i18n.py             langue de l'interface : français / anglais (texte français = clé, traduction anglaise)
-winapp.py           application sans console : journal, fenêtres d'erreur, instance unique, OpenTrack
-
-capture.py          webcam : choix automatique du mode qui délivre le plus d'images
-face.py             MediaPipe Face Landmarker (478 points, iris, pose 6DoF), mode vidéo
-normalize.py        normalisation du visage (Zhang 2018) à partir des landmarks
-gaze_model.py       regard : ratios d'iris (mode simple) ou réseau MobileNetV2 (ONNX, fourni par
-                    l'utilisateur ; MobileOne-S0 accepté en repli), téléchargement vérifié
-calibration.py      calibration Ridge (fuite de tête compensée, centroïdes robustes) + RLS sur les clics
-filters.py          filtre One Euro (+ médian), maintien et fondu en cas de perte du visage
-geometry.py         géométrie de l'écran (mm, pixels, angles)
-output.py           envoi UDP OpenTrack (120 Hz, prédiction, pause), courbe du regard, HUD
-overlay.py          overlay transparent click-through (Windows)
-tray.py             icône de la zone de notification (API Windows, sans dépendance)
-panel.py            panneau de contrôle (état, commandes, réglages en direct, aperçu caméra)
-hotkeys.py          raccourcis clavier globaux (Windows), actifs en jeu
-profile.py          profils JSON par jeu
-
-profiles/           profils de jeux (versionnés)
-tools/              diagnostics : diag_regard.py, diag_stabilite.py, validate.py ; make_icon.py ;
-                    build_exe.py (construit et installe Eyetrack.exe ; --installer : Eyetrack-Setup.exe)
-installer/          script Inno Setup de l'installeur (eyetrack.iss)
-research/           pipeline expérimental (collecte solo, modèles personnels et différentiels,
-                    évaluations) : hors du tracker, voir docs/these/
-assets/             icône de l'application (eyetrack.ico)
-tests/              tests automatiques (axes, envoi OpenTrack, capture, calibration, langue, modèle…)
-docs/               site du projet (index.html, publié par GitHub Pages depuis docs/) ; état de l'art
-                    de l'eye tracking webcam ; docs/these/ : dossier scientifique
-models/             modèles téléchargés (hors git)
-data/               calibrations, cache caméra, sorties de diagnostic (hors git)
+```bash
+python tools/build_exe.py --installer
 ```
 
-## Diagnostics
+This builds `Eyetrack.exe` with PyInstaller and runs its self-test. It then compiles
+`dist\installer\Eyetrack-Setup.exe` with [Inno Setup 6](https://jrsoftware.org/isinfo.php),
+using `installer/eyetrack.iss`. Inno Setup is free:
+`winget install --id JRSoftware.InnoSetup -e --scope user`. Without `--installer`, the script
+installs the build for the current user instead.
 
-| Outil | Ce qu'il mesure |
-|---|---|
-| `tools/diag_regard.py` | Le réseau suit-il les yeux ? Amplitude et signal/bruit par résolution |
-| `tools/diag_stabilite.py` | Tremblement brut / filtré de la tête et du regard, framerate, pertes |
-| `tools/validate.py` | Précision du regard calibré sur 9 cibles (export CSV) |
-| `tools/analyse_calibration.py` | Compare plusieurs modèles de calibration sur la dernière calibration enregistrée (validation croisée) |
+Each build writes `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt` (the exact list of bundled libraries,
+with versions) and a `licenses` folder next to `Eyetrack.exe`.
 
-Chaque calibration enregistre aussi ses données brutes dans
-`data/calibration_samples_<mode>.npz` pour analyse.
-
-### Tests automatiques
+### Tests
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Aussi dans le menu (option 9). Ils vérifient, à partir de mouvements de tête simulés, le sens de
-chaque axe envoyé à OpenTrack (tel que validé en jeu, sans aucune inversion cochée dans
-OpenTrack), l'absence de faux pitch tête tournée, le sens du regard, la pause, le recentrage, la
-prédiction, l'envoi à 120 Hz et les raccourcis. À relancer après toute modification de
-`face.py` ou `output.py` : un test qui échoue = un axe qui partirait du mauvais côté en jeu.
+The tests replay simulated head movements and check the direction of every axis sent to
+OpenTrack, as validated in game. They also check gaze direction, pause, recenter, prediction,
+the 120 Hz output, hotkeys, calibration, translations and the bundled licenses. Run them after
+any change to `face.py` or `output.py`: a failing test means an axis would turn the wrong way in
+game.
 
-## État et suite
+### Project structure
 
-Fait :
+```
+main.py             entry point: capture -> face -> gaze -> filters -> OpenTrack
+eyetrack_app.py     entry point of Eyetrack.exe (last profile, OpenTrack, single instance, errors)
+capture.py          webcam: picks the mode that delivers the most frames
+face.py             MediaPipe Face Landmarker (478 points, irises, 6DoF pose)
+normalize.py        face normalization (Zhang 2018) from the landmarks
+gaze_model.py       gaze: iris ratios (simple mode) or the MobileNetV2 network (ONNX, supplied by
+                    the user; MobileOne-S0 accepted as a fallback), with a verified download
+calibration.py      Ridge calibration (head leak compensated, robust centroids) + RLS on clicks
+filters.py          One Euro filter (+ median), hold and fade when the face is lost
+output.py           OpenTrack UDP output (120 Hz, prediction, pause), gaze curve
+panel.py            control panel; tray.py: tray icon; hotkeys.py: global hotkeys
+overlay.py          click-through gaze overlay
+profile.py          JSON profiles per game, automatic switching
+i18n.py             interface language: French text is the key, English is the translation
+profiles/           game profiles
+tools/              diagnostics, icon, build_exe.py (executable, installer, licenses)
+installer/          Inno Setup script
+research/           experimental pipeline, outside the tracker (see docs/these/, in French)
+tests/              automated tests
+docs/               project website (GitHub Pages) and research notes
+```
 
-- **Phase 1 — solidifier** : raccourcis globaux, envoi à 120 Hz avec prédiction (plus long trou
-  mesuré : 10 ms), recalibration au clic protégée en jeu, tests du sens des axes.
-- **Phase 2 — confort** : panneau de contrôle, aperçu caméra, calibration guidée, alerte reflets,
-  icône de la zone de notification.
-- **Phase 3 — exécutable et installeur** : `Eyetrack.exe` sans terminal, écran d'accueil et
-  calibration au premier lancement (au premier plan), interface français / anglais, installeur
-  `Eyetrack-Setup.exe` (OpenTrack proposé, modèle de regard jamais fourni).
-- **Précision** : webcam en 720p MJPG (au lieu de 640×480 non compressé), compensation de la
-  fuite de rotation de tête, centroïdes robustes, réseau MobileNetV2, overlay stabilisé. Les
-  calibrations d'avant (format v5 ou autre modèle) sont refusées : en refaire une.
+The code comments and the development notes are in French. The detailed project status and
+roadmap are in [README.fr.md](README.fr.md).
 
-À faire :
+## License
 
-- mesurer la précision réelle avec la nouvelle calibration (comparer aux 3,2° d'avant) ;
-- seuils de reflet (« léger » dès 5 % de l'iris, « gênant » dès 15 %) à confirmer en vrai ;
-- pour diffuser : profil OpenTrack fourni (entrée UDP, Accela, axes réglés), signature de
-  l'exécutable (SmartScreen) ; avant toute vente, un modèle de regard sous
-  licence libre (piste du dossier `docs/these/`, scénario B) ;
-- bonus : courbes de réponse de la tête, presets par jeu liant profil tracker et profil
-  OpenTrack (le profil automatique selon le jeu est fait).
+Eyetrack is free software: you can redistribute it and modify it under the terms of the
+[GNU General Public License v3](LICENSE).
 
-## Licences
+The libraries included in the executable keep their own licenses: see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The precision gaze model
+([yakhyo/gaze-estimation](https://github.com/yakhyo/gaze-estimation), trained on Gaze360) is
+**not** distributed with Eyetrack. Users download it themselves, under its own non-commercial
+license.
 
-Eyetrack est un logiciel libre sous licence **GNU GPL v3** (texte complet dans [LICENSE](LICENSE)).
+Game names belong to their respective owners. Eyetrack is not affiliated with them, nor with
+OpenTrack.
 
-Le modèle de regard (`mobilenetv2_gaze.onnx`, ou `mobileone_s0_gaze.onnx` en repli, projet
-yakhyo/gaze-estimation) est entraîné sur Gaze360 : usage **non commercial**. Il n'est donc **jamais fourni** avec Eyetrack (ni dans
-l'exécutable, ni dans l'installeur) : l'utilisateur le télécharge lui-même depuis sa source
-officielle, après avoir accepté sa licence (installeur ou panneau), dans
-`%LOCALAPPDATA%\Eyetrack\models`. Sans lui, Eyetrack fonctionne en mode simple (MediaPipe
-seul). MediaPipe est sous licence Apache 2.0.
+## Credits
+
+[MediaPipe](https://github.com/google-ai-edge/mediapipe) (face landmarks),
+[OpenCV](https://opencv.org/), [ONNX Runtime](https://onnxruntime.ai/),
+[OpenTrack](https://github.com/opentrack/opentrack), and
+[yakhyo/gaze-estimation](https://github.com/yakhyo/gaze-estimation) for the gaze models.

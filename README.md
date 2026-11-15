@@ -276,12 +276,14 @@ Fait :
 - mesurer la précision réelle avec la nouvelle calibration (comparer aux 3,2° d'avant) ;
 - seuils de reflet (« léger » dès 5 % de l'iris, « gênant » dès 15 %) à confirmer en vrai ;
 - pour diffuser : profil OpenTrack fourni (entrée UDP, Accela, axes réglés), signature de
-  l'exécutable (SmartScreen), fichier LICENSE ; avant toute vente, un modèle de regard sous
+  l'exécutable (SmartScreen) ; avant toute vente, un modèle de regard sous
   licence libre (piste du dossier `docs/these/`, scénario B) ;
 - bonus : courbes de réponse de la tête, presets par jeu liant profil tracker et profil
   OpenTrack (le profil automatique selon le jeu est fait).
 
 ## Licences
+
+Eyetrack est un logiciel libre sous licence **GNU GPL v3** (texte complet dans [LICENSE](LICENSE)).
 
 Le modèle de regard (`mobilenetv2_gaze.onnx`, ou `mobileone_s0_gaze.onnx` en repli, projet
 yakhyo/gaze-estimation) est entraîné sur Gaze360 : usage **non commercial**. Il n'est donc **jamais fourni** avec Eyetrack (ni dans

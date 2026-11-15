@@ -244,6 +244,7 @@ data/               calibrations, cache caméra, sorties de diagnostic (hors git
 | `tools/diag_stabilite.py` | Tremblement brut / filtré de la tête et du regard, framerate, pertes |
 | `tools/validate.py` | Précision du regard calibré sur 9 cibles (export CSV) |
 | `tools/analyse_calibration.py` | Compare plusieurs modèles de calibration sur la dernière calibration enregistrée (validation croisée) |
+| `tools/compare_gaze_models.py` | Compare les réseaux de regard (MobileNetV2, MobileOne-S0, ResNet-18) sur les mêmes images : 2 séries de 9 cibles, note de l'application, série croisée, tremblement, temps de calcul |
 
 Chaque calibration enregistre aussi ses données brutes dans
 `data/calibration_samples_<mode>.npz` pour analyse.

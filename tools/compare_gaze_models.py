@@ -207,14 +207,15 @@ def run_session(args: argparse.Namespace) -> Path | None:
         _message(window, sw, sh, [f"Calcul des reseaux : {names[m]} ({m + 1}/{len(nets)})",
                                   f"Image {i}/{total}"], wait_keys=False)
 
-    print(f"Séance : {total} images à {recorder.frames_per_s():.0f} images/s ; calcul des réseaux…")
+    session_fps = recorder.frames_per_s()  # avant de libérer les images (calcul sur leur nombre)
+    print(f"Séance : {total} images à {session_fps:.0f} images/s ; calcul des réseaux…")
     feats, infer_ms = run_networks(recorder.frames, nets, progress)
     recorder.frames.clear()  # images libérées : rien n'en est enregistré
     out = Path(data_path(time.strftime("compare_models_%Y%m%d_%H%M%S.npz")))
     save_session(out, names, feats, collected,
                  screen=[sw, sh, profile.screen_diag, profile.distance_cm],
                  camera=[capture.actual_width, capture.actual_height, capture.actual_fps],
-                 infer_ms=infer_ms, session_fps=recorder.frames_per_s())
+                 infer_ms=infer_ms, session_fps=session_fps)
     report = analyse(out)
     out.with_suffix(".txt").write_text(report, encoding="utf-8")
     print(report)

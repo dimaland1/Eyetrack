@@ -1,6 +1,6 @@
 # Eyetrack
 
-**English** · [Français](README.fr.md) · [Website](https://dimaland1.github.io/Eyetrack/)
+**English** · [Français](README.fr.md) · [Website](https://dimaland1.github.io/Eyetrack/) · [Changelog](CHANGELOG.md)
 
 Free head and eye tracking with an ordinary webcam, for driving and flight simulators.
 

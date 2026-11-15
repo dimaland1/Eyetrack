@@ -55,15 +55,26 @@ def git(*args: str) -> str:
         return ""
 
 
+def release_version() -> str:
+    """« 0.1.0 » si le commit construit porte l'étiquette v0.1.0 et que rien n'est modifié ;
+    sinon « 0.1.0-dev+<commit> » (construction de travail, jamais confondue avec la publiée)."""
+    from version import VERSION
+    commit = git("rev-parse", "--short", "HEAD") or "inconnu"
+    tagged = f"v{VERSION}" in git("tag", "--points-at", "HEAD").split()
+    clean = not git("status", "--porcelain", "--untracked-files=no")
+    return VERSION if tagged and clean else f"{VERSION}-dev+{commit}"
+
+
 def write_build_info() -> str:
     commit = git("rev-parse", "--short", "HEAD") or "inconnu"
     if git("status", "--porcelain", "--untracked-files=no"):
         commit += " (modifié)"
     branch = git("branch", "--show-current")
-    info = {"commit": commit, "branch": branch, "date": time.strftime("%Y-%m-%d %H:%M")}
+    info = {"version": release_version(), "commit": commit, "branch": branch,
+            "date": time.strftime("%Y-%m-%d %H:%M")}
     (ROOT / "build").mkdir(exist_ok=True)
     (ROOT / "build" / "build_info.json").write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
-    return f"{commit} ({branch}) du {info['date']}"
+    return f"{info['version']} ({branch}) du {info['date']}"
 
 
 def build() -> None:
@@ -318,7 +329,7 @@ def build_installer() -> None:
     if iscc is None:
         sys.exit("Inno Setup 6 introuvable. Installation (gratuite, sans droits administrateur) : "
                  "winget install --id JRSoftware.InnoSetup -e --source winget --scope user")
-    version = time.strftime("%Y.%m.%d") + "-" + (git("rev-parse", "--short", "HEAD") or "dev")
+    version = release_version()
     print(f"Compilation de l'installeur (version {version})…")
     cmd = [str(iscc), "/Qp", f"/DAppVersion={version}", f"/DSourceDir={DIST_DIR}",
            str(ROOT / "installer" / "eyetrack.iss")]

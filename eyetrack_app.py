@@ -23,10 +23,10 @@ import winapp
 
 
 def build_info() -> str:
-    """Version de l'exécutable (commit et date de construction), écrite par tools/build_exe.py."""
+    """Version de l'exécutable (numéro, commit et date de construction), écrite par tools/build_exe.py."""
     try:
         info = json.loads((paths.BUNDLE_DIR / "build_info.json").read_text(encoding="utf-8"))
-        return f"version {info.get('commit', '?')} du {info.get('date', '?')}"
+        return f"version {info.get('version', '?')} (commit {info.get('commit', '?')}) du {info.get('date', '?')}"
     except (OSError, ValueError):
         return "version des sources"
 

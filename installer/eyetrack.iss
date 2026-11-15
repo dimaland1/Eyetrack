@@ -16,10 +16,10 @@
   #define SourceDir "..\dist\Eyetrack"
 #endif
 ; Mêmes valeurs que gaze_model.py (vérifié par tests/test_modele.py)
-#define ModelFile "mobilenetv2_gaze.onnx"
-#define ModelUrl "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobilenetv2_gaze.onnx"
+#define ModelFile "mobileone_s0_gaze.onnx"
+#define ModelUrl "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx"
 #define ModelSource "https://github.com/yakhyo/gaze-estimation"
-#define ModelSha256 "b81312df85c7ac1c1b5f78c573620d22c2719cb839650e15f12dc7eecb7744a4"
+#define ModelSha256 "8b4fdc4e3da44733c9a82e7776b411e4a39f94e8e285aee0fc85a548a55f7d9f"
 
 [Setup]
 AppId={{5C2949D4-5DE9-47C6-B3F5-5FC67F400126}
@@ -61,8 +61,8 @@ english.ModelTitle=Precision gaze model (optional)
 french.ModelTitle=Modèle de regard de précision (optionnel)
 english.ModelSubtitle=More precise gaze tracking, from a third party, for non-commercial use only.
 french.ModelSubtitle=Un suivi du regard plus précis, fourni par un tiers, pour un usage non commercial.
-english.ModelText=Eyetrack works without it, in simple mode. The precision model (MobileNetV2, trained on the Gaze360 dataset) is not included with Eyetrack: it belongs to a third party and its license only allows non-commercial use.%n%nIf you tick the box, Setup downloads it from its official source and checks it:%n{#ModelSource}%n%nYou can also download it later from the Eyetrack panel.
-french.ModelText=Eyetrack fonctionne sans lui, en mode simple. Le modèle de précision (MobileNetV2, entraîné sur le jeu de données Gaze360) n'est pas fourni avec Eyetrack : il appartient à un tiers et sa licence n'autorise qu'un usage non commercial.%n%nSi vous cochez la case, l'installeur le télécharge depuis sa source officielle et le vérifie :%n{#ModelSource}%n%nVous pourrez aussi le télécharger plus tard depuis le panneau d'Eyetrack.
+english.ModelText=Eyetrack works without it, in simple mode. The precision model (MobileOne-S0, trained on the Gaze360 dataset) is not included with Eyetrack: it belongs to a third party and its license only allows non-commercial use.%n%nIf you tick the box, Setup downloads it from its official source and checks it:%n{#ModelSource}%n%nYou can also download it later from the Eyetrack panel.
+french.ModelText=Eyetrack fonctionne sans lui, en mode simple. Le modèle de précision (MobileOne-S0, entraîné sur le jeu de données Gaze360) n'est pas fourni avec Eyetrack : il appartient à un tiers et sa licence n'autorise qu'un usage non commercial.%n%nSi vous cochez la case, l'installeur le télécharge depuis sa source officielle et le vérifie :%n{#ModelSource}%n%nVous pourrez aussi le télécharger plus tard depuis le panneau d'Eyetrack.
 english.ModelCheck=Download the precision model and accept its license (personal, non-commercial use)
 french.ModelCheck=Télécharger le modèle de précision et accepter sa licence (usage personnel, non commercial)
 english.Downloading=Downloading the precision gaze model...

@@ -2,7 +2,7 @@
 
 Implémente deux approches interchangeables :
 1. Mode 'iris' (MVP) : calcul des ratios de position de l'iris par rapport aux coins/paupières.
-2. Mode 'net' (SOTA léger) : inférence d'un modèle d'apparence ONNX (MobileOne-S0 / ResNet-18)
+2. Mode 'net' (SOTA léger) : inférence d'un modèle d'apparence ONNX (MobileOne-S0, MobileNetV2 en repli)
    sur l'image normalisée selon Zhang 2018, produisant une direction de regard 3D canonique.
 """
 
@@ -22,12 +22,16 @@ from paths import USER_MODELS_DIR
 # Poids pré-entraînés (yakhyo/gaze-estimation, entraînés sur Gaze360 : usage non commercial).
 # Jamais fournis avec Eyetrack : l'utilisateur les télécharge lui-même depuis la source officielle,
 # après avoir accepté leur licence (installeur ou bouton du panneau). Sans eux : mode 'iris'.
-MODEL_FILE = "mobilenetv2_gaze.onnx"
-FALLBACK_MODEL_FILE = "mobileone_s0_gaze.onnx"
-MODEL_URL = "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobilenetv2_gaze.onnx"
+# MobileOne-S0 par défaut : comparé à MobileNetV2 sur les mêmes images (tools/compare_gaze_models.py,
+# 15/11/2026, 2 séries de 9 cibles, avec lunettes), aussi précis (3,3° contre 3,6° calibré sur une
+# série et testé sur l'autre, écart non significatif), deux fois plus léger (4,7 Mo) et plus rapide.
+# MobileNetV2 reste accepté en repli.
+MODEL_FILE = "mobileone_s0_gaze.onnx"
+FALLBACK_MODEL_FILE = "mobilenetv2_gaze.onnx"
+MODEL_URL = "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx"
 MODEL_SOURCE = "https://github.com/yakhyo/gaze-estimation"
 # Empreinte du fichier attendu : un fichier modifié ou corrompu est refusé
-MODEL_SHA256 = "b81312df85c7ac1c1b5f78c573620d22c2719cb839650e15f12dc7eecb7744a4"
+MODEL_SHA256 = "8b4fdc4e3da44733c9a82e7776b411e4a39f94e8e285aee0fc85a548a55f7d9f"
 
 
 def gaze_model_path() -> str:
@@ -153,7 +157,7 @@ class IrisGazeEstimator:
 
 
 class NetGazeEstimator:
-    """Estimateur basé sur réseau d'apparence ONNX (MobileOne-S0 / ResNet-18)."""
+    """Estimateur basé sur réseau d'apparence ONNX (MobileOne-S0, MobileNetV2, ResNet-18 : même format)."""
 
     def __init__(self, model_path: str | None = None) -> None:
         """Initialise la session ONNX Runtime.
@@ -172,7 +176,8 @@ class NetGazeEstimator:
 
         # Initialisation session ONNX Runtime sur CPU (ultra-rapide avec AVX2)
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 4  # mesuré : 2 threads ≈ 12 ms, 4 threads ≈ 5 ms
+        # 4 threads ; mesuré le 15/11/2026 (patch 448) : MobileOne-S0 8 à 18 ms, MobileNetV2 10 à 21 ms
+        opts.intra_op_num_threads = 4
         opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         self.session = ort.InferenceSession(self.model_path, opts, providers=["CPUExecutionProvider"])
 

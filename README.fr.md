@@ -209,8 +209,8 @@ winapp.py           application sans console : journal, fenêtres d'erreur, inst
 capture.py          webcam : choix automatique du mode qui délivre le plus d'images
 face.py             MediaPipe Face Landmarker (478 points, iris, pose 6DoF), mode vidéo
 normalize.py        normalisation du visage (Zhang 2018) à partir des landmarks
-gaze_model.py       regard : ratios d'iris (mode simple) ou réseau MobileNetV2 (ONNX, fourni par
-                    l'utilisateur ; MobileOne-S0 accepté en repli), téléchargement vérifié
+gaze_model.py       regard : ratios d'iris (mode simple) ou réseau MobileOne-S0 (ONNX, fourni par
+                    l'utilisateur ; MobileNetV2 accepté en repli), téléchargement vérifié
 calibration.py      calibration Ridge (fuite de tête compensée, centroïdes robustes) + RLS sur les clics
 filters.py          filtre One Euro (+ médian), maintien et fondu en cas de perte du visage
 geometry.py         géométrie de l'écran (mm, pixels, angles)
@@ -273,8 +273,12 @@ Fait :
   calibration au premier lancement (au premier plan), interface français / anglais, installeur
   `Eyetrack-Setup.exe` (OpenTrack proposé, modèle de regard jamais fourni).
 - **Précision** : webcam en 720p MJPG (au lieu de 640×480 non compressé), compensation de la
-  fuite de rotation de tête, centroïdes robustes, réseau MobileNetV2, overlay stabilisé. Les
-  calibrations d'avant (format v5 ou autre modèle) sont refusées : en refaire une.
+  fuite de rotation de tête, centroïdes robustes, overlay stabilisé. Les calibrations d'avant
+  (format v5 ou autre modèle) sont refusées : en refaire une.
+- **Choix du réseau de regard** (15/11/2026, `tools/compare_gaze_models.py`, mêmes images,
+  2 séries de 9 cibles, avec lunettes) : calibré sur une série et testé sur l'autre,
+  MobileOne-S0 3,3°, MobileNetV2 3,6° (écart non significatif), ResNet-18 4,5°. MobileOne-S0
+  devient le modèle par défaut : aussi précis, deux fois plus léger, plus rapide.
 
 À faire :
 
@@ -294,7 +298,7 @@ Les bibliothèques embarquées dans l'exécutable et leurs licences sont listée
 (`THIRD_PARTY_NOTICES.txt`, avec les versions) et les textes complets (dossier `licenses`) à
 côté d'`Eyetrack.exe`.
 
-Le modèle de regard (`mobilenetv2_gaze.onnx`, ou `mobileone_s0_gaze.onnx` en repli, projet
+Le modèle de regard (`mobileone_s0_gaze.onnx`, ou `mobilenetv2_gaze.onnx` en repli, projet
 yakhyo/gaze-estimation) est entraîné sur Gaze360 : usage **non commercial**. Il n'est donc **jamais fourni** avec Eyetrack (ni dans
 l'exécutable, ni dans l'installeur) : l'utilisateur le télécharge lui-même depuis sa source
 officielle, après avoir accepté sa licence (installeur ou panneau), dans

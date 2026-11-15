@@ -206,8 +206,8 @@ eyetrack_app.py     entry point of Eyetrack.exe (last profile, OpenTrack, single
 capture.py          webcam: picks the mode that delivers the most frames
 face.py             MediaPipe Face Landmarker (478 points, irises, 6DoF pose)
 normalize.py        face normalization (Zhang 2018) from the landmarks
-gaze_model.py       gaze: iris ratios (simple mode) or the MobileNetV2 network (ONNX, supplied by
-                    the user; MobileOne-S0 accepted as a fallback), with a verified download
+gaze_model.py       gaze: iris ratios (simple mode) or the MobileOne-S0 network (ONNX, supplied by
+                    the user; MobileNetV2 accepted as a fallback), with a verified download
 calibration.py      Ridge calibration (head leak compensated, robust centroids) + RLS on clicks
 filters.py          One Euro filter (+ median), hold and fade when the face is lost
 output.py           OpenTrack UDP output (120 Hz, prediction, pause), gaze curve

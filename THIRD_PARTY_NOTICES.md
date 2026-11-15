@@ -28,7 +28,7 @@ listed below. Each one keeps its own license. All of them can be used in a GPL-3
 
 ## Not included
 
-- **The precision gaze model.** These are the MobileNetV2 and MobileOne-S0 weights from
+- **The precision gaze model.** These are the MobileOne-S0 and MobileNetV2 weights from
   [yakhyo/gaze-estimation](https://github.com/yakhyo/gaze-estimation), trained on Gaze360. Their
   license allows non-commercial use only, so Eyetrack never ships them. Users download them
   themselves from the official source, after accepting that license, from the installer or the
